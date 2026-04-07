@@ -1,7 +1,7 @@
 """Pydantic request/response schemas for the API."""
 
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class FilterSchema(BaseModel):
@@ -38,8 +38,7 @@ class ReportSummary(BaseModel):
     finding_count: int = 0
     duration_ms: int | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReportDetail(BaseModel):
@@ -54,8 +53,7 @@ class ReportDetail(BaseModel):
     error_message: str | None = None
     findings: list[FindingSchema] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReportListResponse(BaseModel):
@@ -72,8 +70,7 @@ class RepositorySchema(BaseModel):
     url: str | None = None
     last_analyzed_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DashboardResponse(BaseModel):
