@@ -1,0 +1,84 @@
+"""Pydantic request/response schemas for the API."""
+
+from datetime import datetime
+from pydantic import BaseModel
+
+
+class FilterSchema(BaseModel):
+    since: datetime | None = None
+    until: datetime | None = None
+    workflows: list[str] | None = None
+    status: list[str] | None = None
+    branches: list[str] | None = None
+
+
+class AnalyzeRequest(BaseModel):
+    repo: str  # local path or GitHub URL
+    filters: FilterSchema | None = None
+
+
+class FindingSchema(BaseModel):
+    id: int
+    dimension: str
+    severity: str
+    title: str
+    description: str
+    file_path: str | None = None
+    line: int | None = None
+    suggestion: str | None = None
+    impact: str | None = None
+
+
+class ReportSummary(BaseModel):
+    id: int
+    repo_owner: str | None = None
+    repo_name: str | None = None
+    created_at: datetime
+    status: str
+    finding_count: int = 0
+    duration_ms: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ReportDetail(BaseModel):
+    id: int
+    repo_owner: str | None = None
+    repo_name: str | None = None
+    created_at: datetime
+    status: str
+    summary_md: str | None = None
+    full_report_json: str | None = None
+    duration_ms: int | None = None
+    error_message: str | None = None
+    findings: list[FindingSchema] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ReportListResponse(BaseModel):
+    reports: list[ReportSummary]
+    total: int
+    page: int
+    limit: int
+
+
+class RepositorySchema(BaseModel):
+    id: int
+    owner: str
+    repo: str
+    url: str | None = None
+    last_analyzed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class DashboardResponse(BaseModel):
+    repo_count: int
+    analysis_count: int
+    severity_distribution: dict[str, int]
+    dimension_distribution: dict[str, int]
+    recent_reports: list[ReportSummary]
