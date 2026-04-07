@@ -12,8 +12,11 @@ GITHUB_API_BASE = "https://api.github.com"
 
 
 class GitHubClient:
-    def __init__(self, token: str | None = None):
-        self.token = token or os.getenv("GITHUB_TOKEN")
+    def __init__(self, token: str | None = None, config: "AgentConfig | None" = None):
+        if config and config.github_token:
+            self.token = config.github_token
+        else:
+            self.token = token or os.getenv("GITHUB_TOKEN")
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:

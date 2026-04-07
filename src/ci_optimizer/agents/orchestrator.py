@@ -19,6 +19,7 @@ from ci_optimizer.agents.cost import cost_agent
 from ci_optimizer.agents.efficiency import efficiency_agent
 from ci_optimizer.agents.errors import error_agent
 from ci_optimizer.agents.security import security_agent
+from ci_optimizer.config import AgentConfig
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.prefetch import AnalysisContext
 
@@ -151,23 +152,56 @@ def _parse_result(raw_text: str) -> tuple[str, list[dict], dict]:
     return raw_text, [], {"total_findings": 0}
 
 
-async def run_analysis(ctx: AnalysisContext) -> AnalysisResult:
+def _build_agents(config: AgentConfig | None = None) -> dict[str, AgentDefinition]:
+    """Build agent definitions, optionally applying model config to sub-agents."""
+    if config and config.model:
+        return {
+            name: AgentDefinition(
+                description=agent.description,
+                prompt=agent.prompt,
+                tools=agent.tools,
+                model=config.model,
+            )
+            for name, agent in AGENTS.items()
+        }
+    return AGENTS
+
+
+async def run_analysis(
+    ctx: AnalysisContext, config: AgentConfig | None = None
+) -> AnalysisResult:
     """Run the full orchestrator analysis pipeline."""
+    if config is None:
+        config = AgentConfig.load()
+
     prompt = _build_analysis_prompt(ctx)
     start_time = time.time()
 
     collected_text = []
     result = AnalysisResult()
 
+    agents = _build_agents(config)
+
+    sdk_options = ClaudeAgentOptions(
+        system_prompt=ORCHESTRATOR_PROMPT,
+        allowed_tools=["Agent"],
+        agents=agents,
+        cwd=str(ctx.local_path),
+        max_turns=config.max_turns,
+    )
+
+    if config.model:
+        sdk_options.model = config.model
+    if config.fallback_model:
+        sdk_options.fallback_model = config.fallback_model
+
+    sdk_env = config.get_sdk_env()
+    if sdk_env:
+        sdk_options.env = sdk_env
+
     async for message in query(
         prompt=prompt,
-        options=ClaudeAgentOptions(
-            system_prompt=ORCHESTRATOR_PROMPT,
-            allowed_tools=["Agent"],
-            agents=AGENTS,
-            cwd=str(ctx.local_path),
-            max_turns=20,
-        ),
+        options=sdk_options,
     ):
         if isinstance(message, AssistantMessage):
             for block in message.content:

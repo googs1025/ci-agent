@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
 from ci_optimizer.api.schemas import (
+    AgentConfigSchema,
     AnalyzeRequest,
     DashboardResponse,
     ReportDetail,
@@ -17,6 +18,7 @@ from ci_optimizer.api.schemas import (
     RepositorySchema,
     FindingSchema,
 )
+from ci_optimizer.config import AgentConfig
 from ci_optimizer.db.crud import (
     complete_report,
     create_report,
@@ -55,13 +57,35 @@ def _to_analysis_filters(schema) -> AnalysisFilters | None:
     )
 
 
-async def _run_analysis_task(report_id: int, repo_input: str, filters: AnalysisFilters | None):
+def _build_config_from_schema(schema: AgentConfigSchema | None) -> AgentConfig:
+    """Build AgentConfig from base config + per-request overrides."""
+    config = AgentConfig.load()
+    if schema:
+        if schema.model:
+            config.model = schema.model
+        if schema.fallback_model:
+            config.fallback_model = schema.fallback_model
+        if schema.anthropic_api_key:
+            config.anthropic_api_key = schema.anthropic_api_key
+        if schema.github_token:
+            config.github_token = schema.github_token
+        if schema.max_turns:
+            config.max_turns = schema.max_turns
+    return config
+
+
+async def _run_analysis_task(
+    report_id: int,
+    repo_input: str,
+    filters: AnalysisFilters | None,
+    config: AgentConfig | None = None,
+):
     """Background task to run the analysis."""
     async with async_session() as session:
         try:
             resolved = resolve_input(repo_input)
             ctx = await prepare_context(resolved, filters)
-            result = await run_analysis(ctx)
+            result = await run_analysis(ctx, config=config)
 
             summary_md = format_markdown(result, ctx)
             full_json = format_json(result, ctx)
@@ -103,12 +127,13 @@ async def analyze(
 
     filters = _to_analysis_filters(request.filters)
     filters_json = json.dumps(filters.to_dict()) if filters else None
+    config = _build_config_from_schema(request.agent_config)
 
     report = await create_report(db, db_repo.id, filters_json)
     await db.commit()
 
     background_tasks.add_task(
-        _run_analysis_task, report.id, request.repo, filters
+        _run_analysis_task, report.id, request.repo, filters, config
     )
 
     return {"report_id": report.id, "status": "running"}
@@ -206,6 +231,31 @@ async def dashboard(db: AsyncSession = Depends(get_db)):
             for r in stats["recent_reports"]
         ],
     )
+
+
+@router.get("/config")
+async def get_config():
+    """Get current agent configuration (sensitive values masked)."""
+    config = AgentConfig.load()
+    return config.to_display_dict()
+
+
+@router.put("/config")
+async def update_config(updates: AgentConfigSchema):
+    """Update agent configuration."""
+    config = AgentConfig.load()
+    if updates.model is not None:
+        config.model = updates.model
+    if updates.fallback_model is not None:
+        config.fallback_model = updates.fallback_model
+    if updates.anthropic_api_key is not None:
+        config.anthropic_api_key = updates.anthropic_api_key
+    if updates.github_token is not None:
+        config.github_token = updates.github_token
+    if updates.max_turns is not None:
+        config.max_turns = updates.max_turns
+    config.save()
+    return config.to_display_dict()
 
 
 @router.get("/repositories", response_model=list[RepositorySchema])

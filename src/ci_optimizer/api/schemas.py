@@ -12,9 +12,18 @@ class FilterSchema(BaseModel):
     branches: list[str] | None = None
 
 
+class AgentConfigSchema(BaseModel):
+    model: str | None = None
+    fallback_model: str | None = None
+    anthropic_api_key: str | None = None
+    github_token: str | None = None
+    max_turns: int | None = None
+
+
 class AnalyzeRequest(BaseModel):
     repo: str  # local path or GitHub URL
     filters: FilterSchema | None = None
+    agent_config: AgentConfigSchema | None = None  # per-request overrides
 
 
 class FindingSchema(BaseModel):
