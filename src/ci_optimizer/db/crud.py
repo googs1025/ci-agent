@@ -58,9 +58,9 @@ async def complete_report(
     for f in findings_data:
         finding = Finding(
             report_id=report_id,
-            dimension=f["dimension"],
+            dimension=f.get("dimension", "unknown"),
             severity=f.get("severity", "info"),
-            title=f["title"],
+            title=f.get("title", "Untitled finding"),
             description=f.get("description", ""),
             file_path=f.get("file"),
             line=f.get("line"),

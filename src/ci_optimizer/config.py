@@ -82,6 +82,12 @@ class AgentConfig:
             env["ANTHROPIC_API_KEY"] = self.anthropic_api_key
         return env
 
+    def __post_init__(self):
+        if self.provider not in ("anthropic", "openai"):
+            self.provider = "anthropic"
+        if self.max_turns < 1:
+            self.max_turns = 20
+
     def get_api_key(self) -> str | None:
         """Get the API key for the configured provider."""
         if self.provider == "openai":

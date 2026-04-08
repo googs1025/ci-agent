@@ -1,8 +1,10 @@
 """GitHub REST API client for fetching CI run data."""
 
+import io
 import os
 import asyncio
-from datetime import datetime
+import zipfile
+from datetime import datetime, timezone
 
 import httpx
 
@@ -44,19 +46,23 @@ class GitHubClient:
         if response.status_code in (403, 429):
             text_lower = response.text.lower()
             if "rate limit" in text_lower or response.status_code == 429:
-                # Check remaining quota
-                remaining = int(response.headers.get("X-RateLimit-Remaining", "0"))
                 reset_time = int(response.headers.get("X-RateLimit-Reset", "0"))
-                wait = max(reset_time - int(datetime.now().timestamp()), 1)
+                now_utc = int(datetime.now(timezone.utc).timestamp())
+                wait = max(reset_time - now_utc, 1)
 
-                # Also handle secondary rate limits (Retry-After header)
+                # Secondary rate limits use Retry-After header
                 retry_after = response.headers.get("Retry-After")
                 if retry_after:
                     wait = min(int(retry_after), 120)
+                else:
+                    wait = min(wait, 120)
 
-                if wait <= 120:
-                    await asyncio.sleep(wait)
-                    response = await client.request(method, path, **kwargs)
+                await asyncio.sleep(wait)
+                response = await client.request(method, path, **kwargs)
+
+                # If still rate limited after retry, raise
+                if response.status_code in (403, 429):
+                    response.raise_for_status()
 
         response.raise_for_status()
         return response.json()
@@ -117,7 +123,7 @@ class GitHubClient:
     async def get_run_logs(
         self, owner: str, repo: str, run_id: int, max_lines: int = 2000
     ) -> str | None:
-        """Download failure logs for a run. Returns truncated log text."""
+        """Download and extract failure logs for a run. Returns truncated log text."""
         client = await self._get_client()
         try:
             response = await client.get(
@@ -125,11 +131,28 @@ class GitHubClient:
                 follow_redirects=True,
             )
             if response.status_code == 200:
-                text = response.text
-                lines = text.split("\n")
-                if len(lines) > max_lines:
-                    lines = lines[-max_lines:]
-                return "\n".join(lines)
+                # Response is a zip file containing log text files
+                try:
+                    zf = zipfile.ZipFile(io.BytesIO(response.content))
+                    all_lines: list[str] = []
+                    for name in zf.namelist():
+                        if name.endswith(".txt") or "/" in name:
+                            try:
+                                text = zf.read(name).decode("utf-8", errors="replace")
+                                all_lines.extend(text.split("\n"))
+                            except (KeyError, UnicodeDecodeError):
+                                pass
+                    zf.close()
+                    if len(all_lines) > max_lines:
+                        all_lines = all_lines[-max_lines:]
+                    return "\n".join(all_lines) if all_lines else None
+                except zipfile.BadZipFile:
+                    # Fallback: treat as plain text
+                    text = response.text
+                    lines = text.split("\n")
+                    if len(lines) > max_lines:
+                        lines = lines[-max_lines:]
+                    return "\n".join(lines)
         except httpx.HTTPError:
             pass
         return None

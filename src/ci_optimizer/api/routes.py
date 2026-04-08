@@ -79,8 +79,11 @@ async def _run_analysis_task(
 ):
     """Background task to run the analysis."""
     import logging
+    import shutil
     logger = logging.getLogger("ci_optimizer.background")
 
+    resolved = None
+    ctx = None
     async with async_session() as session:
         try:
             logger.info(f"[report={report_id}] Starting analysis: repo={repo_input}, provider={config.provider if config else 'default'}, lang={config.language if config else 'default'}")
@@ -108,6 +111,19 @@ async def _run_analysis_task(
             logger.error(f"[report={report_id}] Failed: {e}", exc_info=True)
             await fail_report(session, report_id, str(e))
             await session.commit()
+        finally:
+            # Cleanup temp files and cloned repos
+            if ctx:
+                for attr in ("runs_json_path", "jobs_json_path", "usage_stats_json_path",
+                              "logs_json_path", "workflows_json_path"):
+                    p = getattr(ctx, attr, None)
+                    if p and p.exists():
+                        try:
+                            p.unlink()
+                        except OSError:
+                            pass
+            if resolved and resolved.temp_dir:
+                shutil.rmtree(resolved.temp_dir, ignore_errors=True)
 
 
 @router.post("/analyze")
@@ -117,18 +133,31 @@ async def analyze(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a new CI pipeline analysis."""
-    # Resolve repo info for DB record
-    try:
-        resolved = resolve_input(request.repo)
-    except (FileNotFoundError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # Extract owner/repo without cloning (clone deferred to background task)
+    from ci_optimizer.resolver import is_github_url, is_github_shorthand, parse_github_url, GITHUB_SHORTHAND_PATTERN
 
-    owner = resolved.owner or "local"
-    repo_name = resolved.repo or str(resolved.local_path.name)
+    repo_input = request.repo
+    if is_github_url(repo_input):
+        owner, repo_name = parse_github_url(repo_input)
+    elif is_github_shorthand(repo_input):
+        match = GITHUB_SHORTHAND_PATTERN.match(repo_input)
+        owner, repo_name = match.group(1), match.group(2)
+    else:
+        # Local path — validate exists and is safe
+        from pathlib import Path
+        p = Path(repo_input).resolve()
+        if not p.exists():
+            raise HTTPException(status_code=400, detail=f"Path does not exist: {repo_input}")
+        # Block path traversal: must contain .github/workflows
+        wf_dir = p / ".github" / "workflows"
+        if not wf_dir.exists():
+            raise HTTPException(status_code=400, detail=f"Not a valid repo: no .github/workflows/ found in {repo_input}")
+        owner = "local"
+        repo_name = p.name
 
     db_repo = await get_or_create_repo(
         db, owner, repo_name,
-        url=request.repo if resolved.is_remote else None,
+        url=repo_input if owner != "local" else None,
     )
 
     filters = _to_analysis_filters(request.filters)

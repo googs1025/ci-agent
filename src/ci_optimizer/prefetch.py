@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -156,7 +157,6 @@ def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> d
 
                 # Billing estimate: round up to nearest minute × multiplier
                 minutes = (exec_dur / 60000)
-                import math
                 billed = math.ceil(minutes)
                 multiplier = RUNNER_MULTIPLIERS.get(runner_os, 1)
                 stats["billing_estimate"]["total_minutes"] += billed * multiplier

@@ -176,10 +176,14 @@ async def run_analysis_anthropic(
                 logger.info(f"Analysis complete: cost=${result.cost_usd}, session={message.session_id}")
     except Exception as e:
         logger.error(f"Agent SDK query failed: {e}", exc_info=True)
+        raise RuntimeError(f"Agent SDK analysis failed: {e}") from e
 
     result.raw_report = "\n".join(collected_text)
     result.duration_ms = int((time.time() - start_time) * 1000)
     logger.info(f"Collected {message_count} messages, {len(collected_text)} text blocks, raw_report={len(result.raw_report)} chars")
+
+    if not result.raw_report.strip():
+        raise RuntimeError("Agent returned empty analysis result")
 
     from ci_optimizer.agents.orchestrator import _parse_result
     summary, findings, stats = _parse_result(result.raw_report)

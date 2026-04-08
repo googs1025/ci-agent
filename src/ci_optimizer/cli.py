@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -118,7 +118,7 @@ async def run_analyze(args):
             datetime.fromisoformat(args.until),
         )
     elif args.since:
-        time_range = (datetime.fromisoformat(args.since), datetime.now())
+        time_range = (datetime.fromisoformat(args.since), datetime.now(timezone.utc))
 
     filters = AnalysisFilters(
         time_range=time_range,

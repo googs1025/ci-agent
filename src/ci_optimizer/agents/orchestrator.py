@@ -20,13 +20,40 @@ class AnalysisResult:
     cost_usd: float = 0.0
 
 
+def _try_parse_json(raw_text: str) -> dict | None:
+    """Try multiple strategies to extract JSON from raw text."""
+    # Strategy 1: entire text is JSON
+    try:
+        return json.loads(raw_text.strip())
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 2: JSON inside markdown code fence
+    import re
+    fence_match = re.search(r"```(?:json)?\s*\n(\{[\s\S]*?\})\s*\n```", raw_text)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group(1))
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Strategy 3: first { to last } (original approach)
+    json_start = raw_text.find("{")
+    json_end = raw_text.rfind("}") + 1
+    if json_start >= 0 and json_end > json_start:
+        try:
+            return json.loads(raw_text[json_start:json_end])
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return None
+
+
 def _parse_result(raw_text: str) -> tuple[str, list[dict], dict]:
     """Parse the orchestrator's output into structured data."""
     try:
-        json_start = raw_text.find("{")
-        json_end = raw_text.rfind("}") + 1
-        if json_start >= 0 and json_end > json_start:
-            data = json.loads(raw_text[json_start:json_end])
+        data = _try_parse_json(raw_text)
+        if data:
 
             summary = data.get("executive_summary", "")
             # Handle case where summary is a list of bullet points

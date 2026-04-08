@@ -110,14 +110,26 @@ async def run_analysis_openai(
     ctx: AnalysisContext, config: AgentConfig
 ) -> "AnalysisResult":
     """Run analysis using OpenAI-compatible API with parallel specialist calls."""
-    from ci_optimizer.agents.orchestrator import AnalysisResult, _parse_result
-
     start_time = time.time()
 
     client = AsyncOpenAI(
         api_key=config.openai_api_key,
         base_url=config.base_url,
     )
+
+    try:
+        return await _run_analysis_with_client(client, ctx, config, start_time)
+    finally:
+        await client.close()
+
+
+async def _run_analysis_with_client(
+    client: AsyncOpenAI,
+    ctx: AnalysisContext,
+    config: AgentConfig,
+    start_time: float,
+) -> "AnalysisResult":
+    from ci_optimizer.agents.orchestrator import AnalysisResult, _parse_result
 
     context_text = _build_context_text(ctx)
     model = config.model

@@ -3,6 +3,7 @@
 import json
 from datetime import datetime, timezone
 
+import sqlalchemy
 from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -13,6 +14,9 @@ class Base(DeclarativeBase):
 
 class Repository(Base):
     __tablename__ = "repositories"
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint("owner", "repo", name="uq_owner_repo"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner: Mapped[str]
