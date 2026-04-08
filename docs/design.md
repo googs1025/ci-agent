@@ -149,16 +149,91 @@ config.provider
             └── Fallback: 合成失败时直接拼接 specialist 结果
 ```
 
+### Agentic Loop 机制
+
+两个引擎的执行模式有本质区别：
+
+**Anthropic Engine — 嵌套 Agentic Loop**
+
+```
+async for message in query(prompt, options)     ← anthropic_engine.py
+│
+│  这是 Claude Agent SDK 的核心，内部运行 multi-turn agentic loop:
+│
+│  Orchestrator Agent 启动 (max_turns=20)
+│  │
+│  │  Turn 1: LLM 决定 → 调用 Agent tool ("efficiency-analyst")
+│  │          SDK 启动子 Agent subprocess
+│  │          │
+│  │          │  子 Agent 内部 loop:
+│  │          │  ├─ LLM 决定 → 调用 Read tool → 读取 ci.yml 内容
+│  │          │  ├─ LLM 决定 → 调用 Grep tool → 搜索 "cache" 关键字
+│  │          │  ├─ LLM 决定 → 调用 Read tool → 读取 deploy.yml
+│  │          │  └─ LLM 生成 findings JSON → 子 Agent loop 结束
+│  │          │
+│  │          子 Agent 结果返回给 Orchestrator
+│  │
+│  │  Turn 2: LLM 决定 → 调用 Agent tool ("security-analyst")
+│  │          └─ 子 Agent loop ... (同上)
+│  │
+│  │  Turn 3: LLM 决定 → 调用 Agent tool ("cost-analyst")
+│  │          └─ 子 Agent loop ...
+│  │
+│  │  Turn 4: LLM 决定 → 调用 Agent tool ("error-analyst")
+│  │          └─ 子 Agent loop ...
+│  │
+│  │  Turn 5: LLM 收到全部结果 → 生成综合报告 JSON
+│  │          → Orchestrator loop 结束
+│  │
+│  每一步由 LLM 自主决策：调用哪个工具、读哪个文件、何时停止
+│  这是真正的 Agentic Loop — Agent 具有自主规划和工具调用能力
+```
+
+**关键代码**: `anthropic_engine.py` → `query(prompt, options=ClaudeAgentOptions(agents=AGENTS, allowed_tools=["Agent"]))`
+
+**OpenAI Engine — Pipeline 模式 (非 Agentic Loop)**
+
+```
+asyncio.gather(                                  ← openai_engine.py
+    _call_specialist("efficiency", prompt, ctx),     ← 1 次 chat completion
+    _call_specialist("security", prompt, ctx),       ← 1 次 chat completion
+    _call_specialist("cost", prompt, ctx),           ← 1 次 chat completion
+    _call_specialist("error", prompt, ctx),          ← 1 次 chat completion
+)
+│
+│  4 个独立的 one-shot streaming chat completion，并行执行
+│  没有 tool use，没有 multi-turn，没有自主决策
+│  所有文件内容在调用前预注入 context_text
+│
+▼
+synthesis_call(specialist_results)               ← 第 5 次 chat completion
+│
+│  合成 4 份报告为统一 JSON
+│  同样是 one-shot，不是 loop
+│
+▼
+最终报告
+```
+
+**关键区别**:
+- Anthropic Engine 中 Agent **自主决定**读哪些文件、搜索什么关键字、调用几次工具
+- OpenAI Engine 中所有数据**预先注入** prompt，LLM 只做一次分析，不调用任何工具
+
 ### 对比
 
 | 特性 | Anthropic Engine | OpenAI Engine |
 |------|-----------------|---------------|
+| 执行模式 | **Agentic Loop** (嵌套 multi-turn) | **Pipeline** (one-shot 并行) |
+| 自主决策 | Agent 决定读哪些文件、搜索什么 | 无决策，所有数据预注入 |
+| Tool Use | Read / Glob / Grep / Agent | 无 |
 | SDK | Claude Agent SDK | OpenAI Python SDK |
-| 调用方式 | 子进程 CLI | HTTP API (streaming) |
-| 并行性 | 编排器决定调度顺序 | 4 specialist 强制并行 |
-| 文件访问 | Agent 通过 Read/Glob 工具读取 | 文件内容预注入 context |
+| 调用方式 | 子进程 CLI (多轮对话) | HTTP API (streaming, 单次) |
+| 并行性 | 编排器顺序调度 | 4 specialist 强制并行 |
+| 文件访问 | Agent 按需读取文件 | 文件内容预注入 context |
 | 兼容性 | 仅 Anthropic API | 任何 OpenAI 兼容端点 |
+| LLM 调用次数 | ~20+ 次 (编排器 + 子 Agent 多轮) | 5 次 (4 specialist + 1 synthesis) |
 | 典型耗时 | 3-5 分钟 | 1-2 分钟 |
+| 分析深度 | 更深 (Agent 可针对性深挖) | 受限于 context 窗口大小 |
 
 ---
 
