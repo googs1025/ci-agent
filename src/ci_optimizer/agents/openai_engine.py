@@ -2,9 +2,12 @@
 
 import asyncio
 import json
+import logging
 import time
 
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 from ci_optimizer.agents.prompts import (
     LANGUAGE_INSTRUCTIONS,
@@ -112,17 +115,16 @@ async def run_analysis_openai(
     language = config.language
 
     # Step 1: Run all 4 specialists in parallel
-    specialist_tasks = {
-        name: _call_specialist(client, model, prompt, context_text, language)
-        for name, prompt in SPECIALISTS.items()
-    }
+    logger.info(f"Starting 4 specialist analyses with model={model}, language={language}")
 
-    specialist_results = {}
-    for name, task in specialist_tasks.items():
+    async def _run_specialist(name: str, prompt: str) -> tuple[str, str]:
         try:
-            specialist_results[name] = await task
+            result = await _call_specialist(client, model, prompt, context_text, language)
+            logger.info(f"Specialist {name} returned {len(result)} chars")
+            return name, result
         except Exception as e:
-            specialist_results[name] = json.dumps({
+            logger.error(f"Specialist {name} failed: {e}")
+            return name, json.dumps({
                 "findings": [{
                     "severity": "info",
                     "title": f"Analysis failed for {name}",
@@ -132,6 +134,11 @@ async def run_analysis_openai(
                     "impact": "N/A",
                 }]
             })
+
+    results = await asyncio.gather(
+        *[_run_specialist(name, prompt) for name, prompt in SPECIALISTS.items()]
+    )
+    specialist_results = dict(results)
 
     # Step 2: Orchestrator synthesizes all results
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
@@ -146,6 +153,8 @@ async def run_analysis_openai(
         for name, report in specialist_results.items()
     )
 
+    logger.info(f"Synthesizing {len(specialist_results)} specialist reports ({len(specialist_summary)} chars)")
+
     try:
         synthesis_response = await client.chat.completions.create(
             model=model,
@@ -156,13 +165,28 @@ async def run_analysis_openai(
             temperature=0.1,
         )
         raw_report = synthesis_response.choices[0].message.content or ""
+        logger.info(f"Synthesis returned {len(raw_report)} chars")
     except Exception as e:
-        # Fallback: combine specialist results directly
+        logger.error(f"Synthesis failed: {e}, using fallback combine")
         raw_report = _fallback_combine(specialist_results)
 
-    duration_ms = int((time.time() - start_time) * 1000)
-
+    # Log parse result
     summary, findings, stats = _parse_result(raw_report)
+    logger.info(f"Parsed: {len(findings)} findings, stats={stats}")
+
+    if not findings:
+        # If synthesis didn't produce findings, try fallback combine
+        logger.warning("No findings from synthesis, trying fallback combine from specialist results")
+        fallback = _fallback_combine(specialist_results)
+        fb_summary, fb_findings, fb_stats = _parse_result(fallback)
+        if fb_findings:
+            summary = fb_summary if not summary else summary
+            findings = fb_findings
+            stats = fb_stats
+            raw_report = fallback
+            logger.info(f"Fallback produced {len(findings)} findings")
+
+    duration_ms = int((time.time() - start_time) * 1000)
 
     return AnalysisResult(
         executive_summary=summary,

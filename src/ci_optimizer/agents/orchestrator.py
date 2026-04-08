@@ -29,6 +29,9 @@ def _parse_result(raw_text: str) -> tuple[str, list[dict], dict]:
             data = json.loads(raw_text[json_start:json_end])
 
             summary = data.get("executive_summary", "")
+            # Handle case where summary is a list of bullet points
+            if isinstance(summary, list):
+                summary = "\n".join(str(item) for item in summary)
             findings = []
             dimensions = data.get("dimensions", {})
             for dim_name, dim_data in dimensions.items():

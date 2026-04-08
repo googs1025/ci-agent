@@ -78,11 +78,17 @@ async def _run_analysis_task(
     config: AgentConfig | None = None,
 ):
     """Background task to run the analysis."""
+    import logging
+    logger = logging.getLogger("ci_optimizer.background")
+
     async with async_session() as session:
         try:
+            logger.info(f"[report={report_id}] Starting analysis: repo={repo_input}, provider={config.provider if config else 'default'}, lang={config.language if config else 'default'}")
             resolved = resolve_input(repo_input)
             ctx = await prepare_context(resolved, filters)
+            logger.info(f"[report={report_id}] Prefetch done: {len(ctx.workflow_files)} workflows")
             result = await run_analysis(ctx, config=config)
+            logger.info(f"[report={report_id}] Analysis done: {len(result.findings)} findings, {len(result.raw_report)} chars raw")
 
             lang = config.language if config else "en"
             summary_md = format_markdown(result, ctx, language=lang)
@@ -97,7 +103,9 @@ async def _run_analysis_task(
                 duration_ms=result.duration_ms,
             )
             await session.commit()
+            logger.info(f"[report={report_id}] Saved to DB: {len(result.findings)} findings")
         except Exception as e:
+            logger.error(f"[report={report_id}] Failed: {e}", exc_info=True)
             await fail_report(session, report_id, str(e))
             await session.commit()
 

@@ -1,7 +1,10 @@
 """Anthropic engine — runs analysis via Claude Agent SDK."""
 
 import json
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import (
     AgentDefinition,
@@ -156,19 +159,27 @@ async def run_analysis_anthropic(
     if sdk_env:
         sdk_options.env = sdk_env
 
-    async for message in query(
-        prompt=prompt,
-        options=sdk_options,
-    ):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    collected_text.append(block.text)
-        elif isinstance(message, ResultMessage):
-            result.cost_usd = message.total_cost_usd or 0.0
+    logger.info(f"Starting Anthropic analysis: model={config.model}, lang={config.language}, max_turns={config.max_turns}")
+    message_count = 0
+    try:
+        async for message in query(
+            prompt=prompt,
+            options=sdk_options,
+        ):
+            message_count += 1
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        collected_text.append(block.text)
+            elif isinstance(message, ResultMessage):
+                result.cost_usd = message.total_cost_usd or 0.0
+                logger.info(f"Analysis complete: cost=${result.cost_usd}, session={message.session_id}")
+    except Exception as e:
+        logger.error(f"Agent SDK query failed: {e}", exc_info=True)
 
     result.raw_report = "\n".join(collected_text)
     result.duration_ms = int((time.time() - start_time) * 1000)
+    logger.info(f"Collected {message_count} messages, {len(collected_text)} text blocks, raw_report={len(result.raw_report)} chars")
 
     from ci_optimizer.agents.orchestrator import _parse_result
     summary, findings, stats = _parse_result(result.raw_report)
