@@ -29,6 +29,7 @@ def parse_args():
     analyze.add_argument("--format", "-f", choices=["markdown", "json"], default="markdown", help="Output format")
     analyze.add_argument("--model", "-m", help="Model to use (e.g. claude-sonnet-4-20250514, claude-opus-4-20250514)")
     analyze.add_argument("--api-key", help="Anthropic API key (overrides config and env)")
+    analyze.add_argument("--lang", choices=["en", "zh"], help="Report language: en (English) or zh (Chinese)")
     analyze.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     # serve command
@@ -63,6 +64,8 @@ def _build_config(args) -> "AgentConfig":
         config.model = args.model
     if hasattr(args, "api_key") and args.api_key:
         config.anthropic_api_key = args.api_key
+    if hasattr(args, "lang") and args.lang:
+        config.language = args.lang
 
     return config
 
@@ -136,9 +139,9 @@ async def run_analyze(args):
 
     # Format output
     if args.format == "json":
-        output = format_json(result, ctx)
+        output = format_json(result, ctx, language=config.language)
     else:
-        output = format_markdown(result, ctx)
+        output = format_markdown(result, ctx, language=config.language)
 
     # Write output
     if args.output:

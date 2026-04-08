@@ -1,11 +1,18 @@
 """Pre-fetch GitHub data before agent analysis."""
 
+import asyncio
 import json
+import logging
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Max number of runs to fetch job details for (to avoid rate limiting)
+MAX_RUNS_FOR_JOBS = 20
 
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.github_client import GitHubClient
@@ -252,11 +259,24 @@ async def prepare_context(
             runs = await client.list_workflow_runs(ctx.owner, ctx.repo, filters)
             ctx.runs_json_path = _write_temp_json(runs, "runs")
 
-            # Fetch jobs for ALL runs (not just failed ones)
+            # Fetch jobs for runs (cap to avoid rate limiting)
+            runs_for_jobs = runs[:MAX_RUNS_FOR_JOBS]
+            if len(runs) > MAX_RUNS_FOR_JOBS:
+                logger.info(
+                    f"Limiting job fetch to {MAX_RUNS_FOR_JOBS}/{len(runs)} runs "
+                    f"to avoid API rate limits"
+                )
             all_jobs: dict[str, list[dict]] = {}
-            for run in runs:
+            for i, run in enumerate(runs_for_jobs):
                 run_id = run["id"]
-                jobs = await client.get_run_jobs(ctx.owner, ctx.repo, run_id)
+                try:
+                    jobs = await client.get_run_jobs(ctx.owner, ctx.repo, run_id)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch jobs for run {run_id}: {e}")
+                    continue
+                # Brief pause every 10 requests to stay under secondary rate limits
+                if (i + 1) % 10 == 0:
+                    await asyncio.sleep(1)
                 all_jobs[str(run_id)] = [
                     {
                         "id": j.get("id"),

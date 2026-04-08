@@ -8,6 +8,7 @@ import pytest
 
 from ci_optimizer.resolver import (
     is_github_url,
+    is_github_shorthand,
     parse_github_url,
     detect_github_remote,
     resolve_input,
@@ -42,6 +43,35 @@ class TestIsGithubUrl:
 
     def test_empty_string(self):
         assert is_github_url("") is False
+
+
+class TestIsGithubShorthand:
+    def test_owner_repo(self):
+        assert is_github_shorthand("vllm-project/aibrix") is True
+
+    def test_simple(self):
+        assert is_github_shorthand("octocat/hello-world") is True
+
+    def test_with_dots(self):
+        assert is_github_shorthand("kubernetes-sigs/descheduler") is True
+
+    def test_full_url_not_shorthand(self):
+        assert is_github_shorthand("https://github.com/owner/repo") is False
+
+    def test_local_path_not_shorthand(self):
+        assert is_github_shorthand("/Users/foo/bar") is False
+
+    def test_single_word_not_shorthand(self):
+        assert is_github_shorthand("myrepo") is False
+
+    def test_existing_local_path(self, tmp_path):
+        # Create a path that looks like owner/repo but exists locally
+        (tmp_path / "fake").mkdir()
+        with patch("ci_optimizer.resolver.Path") as MockPath:
+            mock_instance = MagicMock()
+            mock_instance.exists.return_value = True
+            MockPath.return_value = mock_instance
+            assert is_github_shorthand("fake/repo") is False
 
 
 class TestParseGithubUrl:
@@ -156,3 +186,12 @@ class TestResolveInput:
             resolved = resolve_input(str(tmp_path))
             assert resolved.owner is None
             assert resolved.repo is None
+
+    def test_shorthand_owner_repo(self):
+        mock_path = Path("/tmp/ci-agent-test")
+        with patch("ci_optimizer.resolver.clone_repo", return_value=(mock_path, "/tmp/ci-agent-test")) as mock_clone:
+            resolved = resolve_input("vllm-project/aibrix")
+            mock_clone.assert_called_once_with("https://github.com/vllm-project/aibrix")
+            assert resolved.owner == "vllm-project"
+            assert resolved.repo == "aibrix"
+            assert resolved.is_remote is True

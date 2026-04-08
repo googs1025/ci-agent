@@ -18,6 +18,7 @@ class AgentConfigSchema(BaseModel):
     anthropic_api_key: str | None = None
     github_token: str | None = None
     max_turns: int | None = None
+    language: str | None = None  # "en" or "zh"
 
 
 class AnalyzeRequest(BaseModel):

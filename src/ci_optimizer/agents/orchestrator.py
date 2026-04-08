@@ -84,7 +84,21 @@ class AnalysisResult:
     cost_usd: float = 0.0
 
 
-def _build_analysis_prompt(ctx: AnalysisContext) -> str:
+LANGUAGE_INSTRUCTIONS = {
+    "zh": (
+        "\n## 语言要求\n"
+        "你必须使用**中文**输出所有内容，包括 executive_summary、每个 finding 的 "
+        "title、description、suggestion 和 impact 字段。JSON key 保持英文不变。"
+    ),
+    "en": (
+        "\n## Language\n"
+        "Output all content in **English**, including executive_summary and all "
+        "finding fields (title, description, suggestion, impact). JSON keys stay as-is."
+    ),
+}
+
+
+def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
     """Build the prompt for the orchestrator with context paths."""
     parts = [
         f"Analyze the CI pipelines in: {ctx.local_path}",
@@ -116,6 +130,9 @@ def _build_analysis_prompt(ctx: AnalysisContext) -> str:
         "\nPlease dispatch all 4 specialist agents to analyze these files, "
         "then produce the unified report."
     )
+
+    # Add language instruction
+    parts.append(LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"]))
 
     return "\n".join(parts)
 
@@ -178,7 +195,7 @@ async def run_analysis(
     if config is None:
         config = AgentConfig.load()
 
-    prompt = _build_analysis_prompt(ctx)
+    prompt = _build_analysis_prompt(ctx, language=config.language)
     start_time = time.time()
 
     collected_text = []
@@ -186,8 +203,11 @@ async def run_analysis(
 
     agents = _build_agents(config)
 
+    lang_instruction = LANGUAGE_INSTRUCTIONS.get(config.language, LANGUAGE_INSTRUCTIONS["en"])
+    system_prompt = ORCHESTRATOR_PROMPT + lang_instruction
+
     sdk_options = ClaudeAgentOptions(
-        system_prompt=ORCHESTRATOR_PROMPT,
+        system_prompt=system_prompt,
         allowed_tools=["Agent"],
         agents=agents,
         cwd=str(ctx.local_path),

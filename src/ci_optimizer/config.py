@@ -25,6 +25,7 @@ class AgentConfig:
 
     # Agent behavior
     max_turns: int = 20
+    language: str = "en"  # "en" or "zh"
 
     def save(self):
         """Persist config to ~/.ci-agent/config.json."""
@@ -56,6 +57,8 @@ class AgentConfig:
             config.github_token = env_token
         if env_model := os.getenv("CI_AGENT_MODEL"):
             config.model = env_model
+        if env_lang := os.getenv("CI_AGENT_LANGUAGE"):
+            config.language = env_lang
 
         return config
 

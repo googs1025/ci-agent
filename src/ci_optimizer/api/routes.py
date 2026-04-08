@@ -71,6 +71,8 @@ def _build_config_from_schema(schema: AgentConfigSchema | None) -> AgentConfig:
             config.github_token = schema.github_token
         if schema.max_turns:
             config.max_turns = schema.max_turns
+        if schema.language:
+            config.language = schema.language
     return config
 
 
@@ -87,8 +89,9 @@ async def _run_analysis_task(
             ctx = await prepare_context(resolved, filters)
             result = await run_analysis(ctx, config=config)
 
-            summary_md = format_markdown(result, ctx)
-            full_json = format_json(result, ctx)
+            lang = config.language if config else "en"
+            summary_md = format_markdown(result, ctx, language=lang)
+            full_json = format_json(result, ctx, language=lang)
 
             await complete_report(
                 session=session,
@@ -254,6 +257,8 @@ async def update_config(updates: AgentConfigSchema):
         config.github_token = updates.github_token
     if updates.max_turns is not None:
         config.max_turns = updates.max_turns
+    if updates.language is not None:
+        config.language = updates.language
     config.save()
     return config.to_display_dict()
 

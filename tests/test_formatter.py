@@ -169,3 +169,40 @@ class TestFormatJson:
         output = format_json(sample_result, ctx)
         data = json.loads(output)
         assert str(tmp_path) in data["repository"]
+
+    def test_json_includes_language(self, sample_result, sample_context):
+        output = format_json(sample_result, sample_context, language="zh")
+        data = json.loads(output)
+        assert data["language"] == "zh"
+
+
+class TestChineseOutput:
+    """Test Chinese language output."""
+
+    def test_markdown_chinese_headers(self, sample_result, sample_context):
+        md = format_markdown(sample_result, sample_context, language="zh")
+        assert "# CI 流水线分析报告" in md
+        assert "**仓库:**" in md
+        assert "**日期:**" in md
+        assert "总结摘要" in md
+
+    def test_markdown_chinese_dimensions(self, sample_result, sample_context):
+        md = format_markdown(sample_result, sample_context, language="zh")
+        assert "执行效率" in md
+        assert "安全与最佳实践" in md
+        assert "成本优化" in md
+        assert "错误分析" in md
+
+    def test_markdown_chinese_empty_dimension(self, sample_result, sample_context):
+        md = format_markdown(sample_result, sample_context, language="zh")
+        assert "该维度暂无发现" in md  # error dimension has no findings
+
+    def test_markdown_chinese_filters(self, sample_result, sample_context):
+        sample_context.filters = AnalysisFilters(branches=["main"])
+        md = format_markdown(sample_result, sample_context, language="zh")
+        assert "已应用的过滤条件" in md
+
+    def test_english_is_default(self, sample_result, sample_context):
+        md = format_markdown(sample_result, sample_context)
+        assert "# CI Pipeline Analysis Report" in md
+        assert "Executive Summary" in md

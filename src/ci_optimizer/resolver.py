@@ -10,6 +10,11 @@ GITHUB_URL_PATTERN = re.compile(
     r"(?:https?://)?github\.com/([^/]+)/([^/\s.]+?)(?:\.git)?/?$"
 )
 
+# Matches "owner/repo" shorthand (no slashes beyond the one separator, no spaces)
+GITHUB_SHORTHAND_PATTERN = re.compile(
+    r"^([a-zA-Z0-9\-_.]+)/([a-zA-Z0-9\-_.]+)$"
+)
+
 
 @dataclass
 class ResolvedInput:
@@ -22,6 +27,14 @@ class ResolvedInput:
 
 def is_github_url(input_str: str) -> bool:
     return bool(GITHUB_URL_PATTERN.match(input_str))
+
+
+def is_github_shorthand(input_str: str) -> bool:
+    """Check if input is 'owner/repo' shorthand (not a local path)."""
+    if GITHUB_SHORTHAND_PATTERN.match(input_str):
+        # Make sure it's not an existing local path
+        return not Path(input_str).exists()
+    return False
 
 
 def parse_github_url(url: str) -> tuple[str, str]:
@@ -78,10 +91,29 @@ def clone_repo(url: str) -> tuple[Path, str]:
 
 
 def resolve_input(input_str: str) -> ResolvedInput:
-    """Resolve user input to a ResolvedInput with local path and optional GitHub info."""
+    """Resolve user input to a ResolvedInput with local path and optional GitHub info.
+
+    Accepts:
+      - GitHub URL: https://github.com/owner/repo
+      - Shorthand: owner/repo (auto-expands to GitHub URL)
+      - Local path: /path/to/repo or ./repo
+    """
     if is_github_url(input_str):
         owner, repo = parse_github_url(input_str)
         local_path, temp_dir = clone_repo(input_str)
+        return ResolvedInput(
+            local_path=local_path,
+            owner=owner,
+            repo=repo,
+            is_remote=True,
+            temp_dir=temp_dir,
+        )
+
+    if is_github_shorthand(input_str):
+        match = GITHUB_SHORTHAND_PATTERN.match(input_str)
+        owner, repo = match.group(1), match.group(2)
+        url = f"https://github.com/{owner}/{repo}"
+        local_path, temp_dir = clone_repo(url)
         return ResolvedInput(
             local_path=local_path,
             owner=owner,

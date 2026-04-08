@@ -14,20 +14,77 @@ SEVERITY_ICONS = {
     "info": "🔵",
 }
 
+# i18n strings
+I18N = {
+    "en": {
+        "title": "CI Pipeline Analysis Report",
+        "repository": "Repository",
+        "date": "Date",
+        "workflows": "Workflows",
+        "duration": "Duration",
+        "findings": "Findings",
+        "executive_summary": "Executive Summary",
+        "no_summary": "_No summary available._",
+        "no_findings": "_No findings in this dimension._",
+        "severity": "Severity",
+        "finding": "Finding",
+        "file": "File",
+        "suggestion": "Suggestion",
+        "impact": "Impact",
+        "filters_applied": "Filters Applied",
+        "dimensions": {
+            "efficiency": "Execution Efficiency",
+            "security": "Security & Best Practices",
+            "cost": "Cost Optimization",
+            "error": "Error Analysis",
+        },
+    },
+    "zh": {
+        "title": "CI 流水线分析报告",
+        "repository": "仓库",
+        "date": "日期",
+        "workflows": "工作流",
+        "duration": "耗时",
+        "findings": "发现",
+        "executive_summary": "总结摘要",
+        "no_summary": "_暂无摘要。_",
+        "no_findings": "_该维度暂无发现。_",
+        "severity": "严重度",
+        "finding": "发现",
+        "file": "文件",
+        "suggestion": "建议",
+        "impact": "影响",
+        "filters_applied": "已应用的过滤条件",
+        "dimensions": {
+            "efficiency": "执行效率",
+            "security": "安全与最佳实践",
+            "cost": "成本优化",
+            "error": "错误分析",
+        },
+    },
+}
 
-def format_markdown(result: AnalysisResult, ctx: AnalysisContext) -> str:
+
+def _get_i18n(language: str) -> dict:
+    return I18N.get(language, I18N["en"])
+
+
+def format_markdown(
+    result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
+) -> str:
     """Format analysis result as a Markdown report."""
+    t = _get_i18n(language)
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     lines = [
-        f"# CI Pipeline Analysis Report",
+        f"# {t['title']}",
         f"",
-        f"**Repository:** {repo_name}",
-        f"**Date:** {now}",
-        f"**Workflows:** {len(ctx.workflow_files)} files",
-        f"**Duration:** {result.duration_ms / 1000:.1f}s",
-        f"**Findings:** {result.stats.get('total_findings', 0)} "
+        f"**{t['repository']}:** {repo_name}",
+        f"**{t['date']}:** {now}",
+        f"**{t['workflows']}:** {len(ctx.workflow_files)} files",
+        f"**{t['duration']}:** {result.duration_ms / 1000:.1f}s",
+        f"**{t['findings']}:** {result.stats.get('total_findings', 0)} "
         f"({result.stats.get('critical', 0)} critical, "
         f"{result.stats.get('major', 0)} major, "
         f"{result.stats.get('minor', 0)} minor, "
@@ -35,18 +92,19 @@ def format_markdown(result: AnalysisResult, ctx: AnalysisContext) -> str:
         "",
         "---",
         "",
-        "## Executive Summary",
+        f"## {t['executive_summary']}",
         "",
-        result.executive_summary or "_No summary available._",
+        result.executive_summary or t["no_summary"],
         "",
     ]
 
     # Group findings by dimension
+    dim_titles = t["dimensions"]
     dimensions = {
-        "efficiency": ("Execution Efficiency", []),
-        "security": ("Security & Best Practices", []),
-        "cost": ("Cost Optimization", []),
-        "error": ("Error Analysis", []),
+        "efficiency": (dim_titles["efficiency"], []),
+        "security": (dim_titles["security"], []),
+        "cost": (dim_titles["cost"], []),
+        "error": (dim_titles["error"], []),
     }
 
     for f in result.findings:
@@ -59,11 +117,11 @@ def format_markdown(result: AnalysisResult, ctx: AnalysisContext) -> str:
         lines.append("")
 
         if not findings:
-            lines.append("_No findings in this dimension._")
+            lines.append(t["no_findings"])
             lines.append("")
             continue
 
-        lines.append("| # | Severity | Finding | File | Suggestion |")
+        lines.append(f"| # | {t['severity']} | {t['finding']} | {t['file']} | {t['suggestion']} |")
         lines.append("|---|----------|---------|------|------------|")
 
         for i, f in enumerate(findings, 1):
@@ -87,7 +145,7 @@ def format_markdown(result: AnalysisResult, ctx: AnalysisContext) -> str:
                 lines.append(f"{f['description']}")
                 if f.get("impact"):
                     lines.append(f"")
-                    lines.append(f"**Impact:** {f['impact']}")
+                    lines.append(f"**{t['impact']}:** {f['impact']}")
                 lines.append("")
 
     # Filters applied
@@ -96,7 +154,7 @@ def format_markdown(result: AnalysisResult, ctx: AnalysisContext) -> str:
         if filter_dict:
             lines.append("---")
             lines.append("")
-            lines.append("## Filters Applied")
+            lines.append(f"## {t['filters_applied']}")
             lines.append("")
             for k, v in filter_dict.items():
                 lines.append(f"- **{k}:** {v}")
@@ -105,7 +163,9 @@ def format_markdown(result: AnalysisResult, ctx: AnalysisContext) -> str:
     return "\n".join(lines)
 
 
-def format_json(result: AnalysisResult, ctx: AnalysisContext) -> str:
+def format_json(
+    result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
+) -> str:
     """Format analysis result as JSON."""
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
 
@@ -119,6 +179,7 @@ def format_json(result: AnalysisResult, ctx: AnalysisContext) -> str:
 
     output = {
         "repository": repo_name,
+        "language": language,
         "date": datetime.now(timezone.utc).isoformat(),
         "workflow_count": len(ctx.workflow_files),
         "duration_ms": result.duration_ms,

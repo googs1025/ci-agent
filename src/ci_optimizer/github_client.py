@@ -40,13 +40,23 @@ class GitHubClient:
         client = await self._get_client()
         response = await client.request(method, path, **kwargs)
 
-        # Handle rate limiting
-        if response.status_code == 403 and "rate limit" in response.text.lower():
-            reset_time = int(response.headers.get("X-RateLimit-Reset", "0"))
-            wait = max(reset_time - int(datetime.now().timestamp()), 1)
-            if wait <= 60:
-                await asyncio.sleep(wait)
-                response = await client.request(method, path, **kwargs)
+        # Handle rate limiting with retry
+        if response.status_code in (403, 429):
+            text_lower = response.text.lower()
+            if "rate limit" in text_lower or response.status_code == 429:
+                # Check remaining quota
+                remaining = int(response.headers.get("X-RateLimit-Remaining", "0"))
+                reset_time = int(response.headers.get("X-RateLimit-Reset", "0"))
+                wait = max(reset_time - int(datetime.now().timestamp()), 1)
+
+                # Also handle secondary rate limits (Retry-After header)
+                retry_after = response.headers.get("Retry-After")
+                if retry_after:
+                    wait = min(int(retry_after), 120)
+
+                if wait <= 120:
+                    await asyncio.sleep(wait)
+                    response = await client.request(method, path, **kwargs)
 
         response.raise_for_status()
         return response.json()
