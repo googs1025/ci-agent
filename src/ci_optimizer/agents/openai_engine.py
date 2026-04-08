@@ -83,18 +83,27 @@ async def _call_specialist(
     context_text: str,
     language: str,
 ) -> str:
-    """Call a single specialist and return its response."""
+    """Call a single specialist and return its response via streaming."""
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
 
-    response = await client.chat.completions.create(
+    # Use streaming to work around proxies that return content:null in non-stream mode
+    collected: list[str] = []
+    stream = await client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": specialist_prompt + lang_instruction},
             {"role": "user", "content": context_text},
         ],
         temperature=0.2,
+        stream=True,
     )
-    return response.choices[0].message.content or ""
+    async for chunk in stream:
+        if chunk.choices:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                collected.append(delta.content)
+
+    return "".join(collected)
 
 
 async def run_analysis_openai(
@@ -156,15 +165,22 @@ async def run_analysis_openai(
     logger.info(f"Synthesizing {len(specialist_results)} specialist reports ({len(specialist_summary)} chars)")
 
     try:
-        synthesis_response = await client.chat.completions.create(
+        collected: list[str] = []
+        stream = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": synthesis_prompt},
                 {"role": "user", "content": specialist_summary},
             ],
             temperature=0.1,
+            stream=True,
         )
-        raw_report = synthesis_response.choices[0].message.content or ""
+        async for chunk in stream:
+            if chunk.choices:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    collected.append(delta.content)
+        raw_report = "".join(collected)
         logger.info(f"Synthesis returned {len(raw_report)} chars")
     except Exception as e:
         logger.error(f"Synthesis failed: {e}, using fallback combine")
