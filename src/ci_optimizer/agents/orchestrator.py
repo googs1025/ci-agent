@@ -95,6 +95,10 @@ def _build_analysis_prompt(ctx: AnalysisContext) -> str:
 
     if ctx.runs_json_path:
         parts.append(f"\nCI run history data: {ctx.runs_json_path}")
+    if ctx.jobs_json_path:
+        parts.append(f"All jobs data (with step timing, runner labels): {ctx.jobs_json_path}")
+    if ctx.usage_stats_json_path:
+        parts.append(f"Pre-computed usage statistics: {ctx.usage_stats_json_path}")
     if ctx.logs_json_path:
         parts.append(f"Failure logs data: {ctx.logs_json_path}")
     if ctx.workflows_json_path:

@@ -109,6 +109,14 @@ def format_json(result: AnalysisResult, ctx: AnalysisContext) -> str:
     """Format analysis result as JSON."""
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
 
+    # Load usage stats if available
+    usage_stats = None
+    if ctx.usage_stats_json_path and ctx.usage_stats_json_path.exists():
+        try:
+            usage_stats = json.loads(ctx.usage_stats_json_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
     output = {
         "repository": repo_name,
         "date": datetime.now(timezone.utc).isoformat(),
@@ -120,6 +128,8 @@ def format_json(result: AnalysisResult, ctx: AnalysisContext) -> str:
         "findings": result.findings,
     }
 
+    if usage_stats:
+        output["usage_stats"] = usage_stats
     if ctx.filters:
         output["filters"] = ctx.filters.to_dict()
 

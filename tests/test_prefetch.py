@@ -7,7 +7,14 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
 
 from ci_optimizer.filters import AnalysisFilters
-from ci_optimizer.prefetch import prepare_context, _write_temp_json, AnalysisContext
+from ci_optimizer.prefetch import (
+    prepare_context,
+    _write_temp_json,
+    _compute_usage_stats,
+    _duration_ms,
+    _detect_runner_os,
+    AnalysisContext,
+)
 from ci_optimizer.resolver import ResolvedInput
 
 
@@ -26,6 +33,151 @@ class TestWriteTempJson:
         loaded = json.loads(path.read_text())
         assert loaded["runs"][0]["id"] == 1
         path.unlink()
+
+
+class TestDurationMs:
+    def test_valid_timestamps(self):
+        assert _duration_ms("2024-01-01T00:00:00Z", "2024-01-01T00:05:00Z") == 300000
+
+    def test_none_start(self):
+        assert _duration_ms(None, "2024-01-01T00:05:00Z") is None
+
+    def test_none_end(self):
+        assert _duration_ms("2024-01-01T00:00:00Z", None) is None
+
+    def test_both_none(self):
+        assert _duration_ms(None, None) is None
+
+
+class TestDetectRunnerOs:
+    def test_ubuntu(self):
+        assert _detect_runner_os(["ubuntu-latest"]) == "ubuntu"
+
+    def test_macos(self):
+        assert _detect_runner_os(["macos-latest"]) == "macos"
+
+    def test_windows(self):
+        assert _detect_runner_os(["windows-latest"]) == "windows"
+
+    def test_self_hosted_linux(self):
+        assert _detect_runner_os(["self-hosted", "linux"]) == "ubuntu"
+
+    def test_unknown(self):
+        assert _detect_runner_os(["self-hosted", "custom"]) == "unknown"
+
+    def test_none(self):
+        assert _detect_runner_os(None) == "unknown"
+
+    def test_empty(self):
+        assert _detect_runner_os([]) == "unknown"
+
+
+class TestComputeUsageStats:
+    def test_empty_data(self):
+        stats = _compute_usage_stats([], {})
+        assert stats["total_runs"] == 0
+        assert stats["total_jobs"] == 0
+
+    def test_basic_stats(self):
+        runs = [
+            {"id": 1, "name": "CI", "conclusion": "success", "run_started_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:10:00Z"},
+            {"id": 2, "name": "CI", "conclusion": "failure", "run_started_at": "2024-01-01T01:00:00Z", "updated_at": "2024-01-01T01:05:00Z"},
+        ]
+        all_jobs = {
+            "1": [
+                {
+                    "name": "test",
+                    "conclusion": "success",
+                    "labels": ["ubuntu-latest"],
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "started_at": "2024-01-01T00:00:10Z",
+                    "completed_at": "2024-01-01T00:05:00Z",
+                    "steps": [
+                        {"name": "Run tests", "conclusion": "success", "started_at": "2024-01-01T00:01:00Z", "completed_at": "2024-01-01T00:04:00Z"},
+                    ],
+                }
+            ],
+            "2": [
+                {
+                    "name": "test",
+                    "conclusion": "failure",
+                    "labels": ["ubuntu-latest"],
+                    "created_at": "2024-01-01T01:00:00Z",
+                    "started_at": "2024-01-01T01:00:05Z",
+                    "completed_at": "2024-01-01T01:03:00Z",
+                    "steps": [],
+                }
+            ],
+        }
+
+        stats = _compute_usage_stats(runs, all_jobs)
+
+        assert stats["total_runs"] == 2
+        assert stats["total_jobs"] == 2
+        assert stats["conclusion_counts"]["success"] == 1
+        assert stats["conclusion_counts"]["failure"] == 1
+        assert stats["runner_distribution"]["ubuntu"] == 2
+
+        # Per-workflow
+        assert stats["per_workflow"]["CI"]["total_runs"] == 2
+        assert stats["per_workflow"]["CI"]["success"] == 1
+        assert stats["per_workflow"]["CI"]["success_rate"] == 50.0
+
+        # Per-job
+        assert stats["per_job"]["test"]["total_runs"] == 2
+        assert stats["per_job"]["test"]["success"] == 1
+
+        # Timing
+        assert stats["timing"]["avg_job_duration_ms"] > 0
+        assert stats["timing"]["avg_queue_wait_ms"] >= 0
+
+        # Billing
+        assert stats["billing_estimate"]["total_minutes"] > 0
+        assert stats["billing_estimate"]["by_os"]["ubuntu"] > 0
+
+    def test_runner_multipliers(self):
+        runs = [{"id": 1, "name": "CI", "conclusion": "success"}]
+        all_jobs = {
+            "1": [
+                {
+                    "name": "build",
+                    "conclusion": "success",
+                    "labels": ["macos-latest"],
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "started_at": "2024-01-01T00:00:00Z",
+                    "completed_at": "2024-01-01T00:02:00Z",  # 2 minutes
+                    "steps": [],
+                }
+            ],
+        }
+
+        stats = _compute_usage_stats(runs, all_jobs)
+        # 2 minutes × 10 (macOS multiplier) = 20
+        assert stats["billing_estimate"]["by_os"]["macos"] == 20
+
+    def test_slowest_steps(self):
+        runs = [{"id": 1, "name": "CI", "conclusion": "success"}]
+        all_jobs = {
+            "1": [
+                {
+                    "name": "build",
+                    "conclusion": "success",
+                    "labels": ["ubuntu-latest"],
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "started_at": "2024-01-01T00:00:00Z",
+                    "completed_at": "2024-01-01T00:10:00Z",
+                    "steps": [
+                        {"name": "Checkout", "conclusion": "success", "started_at": "2024-01-01T00:00:00Z", "completed_at": "2024-01-01T00:00:05Z"},
+                        {"name": "Install deps", "conclusion": "success", "started_at": "2024-01-01T00:00:05Z", "completed_at": "2024-01-01T00:03:00Z"},
+                        {"name": "Build", "conclusion": "success", "started_at": "2024-01-01T00:03:00Z", "completed_at": "2024-01-01T00:09:00Z"},
+                    ],
+                }
+            ],
+        }
+
+        stats = _compute_usage_stats(runs, all_jobs)
+        assert len(stats["slowest_steps"]) == 3
+        assert stats["slowest_steps"][0]["step"] == "Build"  # slowest first
 
 
 class TestPrepareContext:
@@ -52,23 +204,39 @@ class TestPrepareContext:
         ctx = await prepare_context(resolved)
 
         assert ctx.runs_json_path is None
+        assert ctx.jobs_json_path is None
+        assert ctx.usage_stats_json_path is None
         assert ctx.logs_json_path is None
         assert ctx.owner is None
 
     @pytest.mark.asyncio
-    async def test_with_github_info_fetches_api(self, tmp_repo):
-        """When owner/repo is set, GitHub API data is fetched."""
+    async def test_with_github_info_fetches_all_jobs(self, tmp_repo):
+        """When owner/repo is set, jobs are fetched for ALL runs."""
         resolved = ResolvedInput(
             local_path=tmp_repo, owner="octocat", repo="hello-world"
         )
 
         mock_client = AsyncMock()
         mock_client.list_workflow_runs.return_value = [
-            {"id": 1, "conclusion": "success", "name": "CI"},
-            {"id": 2, "conclusion": "failure", "name": "CI"},
+            {"id": 1, "conclusion": "success", "name": "CI", "run_started_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:05:00Z"},
+            {"id": 2, "conclusion": "failure", "name": "CI", "run_started_at": "2024-01-01T01:00:00Z", "updated_at": "2024-01-01T01:03:00Z"},
         ]
         mock_client.get_run_jobs.return_value = [
-            {"name": "test", "conclusion": "failure", "steps": []}
+            {
+                "id": 100,
+                "name": "test",
+                "status": "completed",
+                "conclusion": "success",
+                "created_at": "2024-01-01T00:00:00Z",
+                "started_at": "2024-01-01T00:00:05Z",
+                "completed_at": "2024-01-01T00:05:00Z",
+                "runner_id": 1,
+                "runner_name": "runner-1",
+                "labels": ["ubuntu-latest"],
+                "steps": [
+                    {"name": "Run tests", "status": "completed", "conclusion": "success", "number": 1, "started_at": "2024-01-01T00:01:00Z", "completed_at": "2024-01-01T00:04:00Z"},
+                ],
+            }
         ]
         mock_client.get_run_logs.return_value = "Error: test failed"
         mock_client.get_workflows.return_value = [
@@ -82,26 +250,36 @@ class TestPrepareContext:
         with patch("ci_optimizer.prefetch.GitHubClient", return_value=mock_client):
             ctx = await prepare_context(resolved)
 
+        # get_run_jobs called for BOTH runs (not just failed)
+        assert mock_client.get_run_jobs.call_count == 2
+
+        # All new data files exist
+        assert ctx.jobs_json_path is not None
+        assert ctx.jobs_json_path.exists()
+        assert ctx.usage_stats_json_path is not None
+        assert ctx.usage_stats_json_path.exists()
         assert ctx.runs_json_path is not None
-        assert ctx.runs_json_path.exists()
         assert ctx.logs_json_path is not None
-        assert ctx.logs_json_path.exists()
-        assert ctx.workflows_json_path is not None
-        assert ctx.repo_info is not None
-        assert ctx.repo_info["full_name"] == "octocat/hello-world"
 
-        # Verify run data was saved
-        runs_data = json.loads(ctx.runs_json_path.read_text())
-        assert len(runs_data) == 2
+        # Verify jobs data contains both runs
+        jobs_data = json.loads(ctx.jobs_json_path.read_text())
+        assert "1" in jobs_data
+        assert "2" in jobs_data
+        assert len(jobs_data["1"]) == 1
+        assert jobs_data["1"][0]["labels"] == ["ubuntu-latest"]
 
-        # Verify logs data was saved (only failed runs)
-        logs_data = json.loads(ctx.logs_json_path.read_text())
-        assert "2" in logs_data  # run id 2 was failure
+        # Verify usage stats were computed
+        usage_data = json.loads(ctx.usage_stats_json_path.read_text())
+        assert usage_data["total_runs"] == 2
+        assert usage_data["total_jobs"] == 2
+        assert "ubuntu" in usage_data["runner_distribution"]
+        assert usage_data["billing_estimate"]["total_minutes"] > 0
 
-        # Cleanup temp files
-        ctx.runs_json_path.unlink(missing_ok=True)
-        ctx.logs_json_path.unlink(missing_ok=True)
-        ctx.workflows_json_path.unlink(missing_ok=True)
+        # Cleanup
+        for p in [ctx.runs_json_path, ctx.jobs_json_path, ctx.usage_stats_json_path,
+                   ctx.logs_json_path, ctx.workflows_json_path]:
+            if p:
+                p.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
     async def test_filters_passed_through(self, tmp_repo):

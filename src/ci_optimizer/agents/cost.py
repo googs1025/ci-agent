@@ -25,9 +25,15 @@ COST_PROMPT = """You are a CI pipeline cost optimization specialist. Your job is
 ## Instructions
 
 1. Read each workflow YAML file
-2. If a runs data JSON file path is provided, read it to analyze historical run patterns
-3. Analyze against the dimensions above
-4. Output findings as JSON
+2. Read the usage statistics JSON file — it contains pre-computed data:
+   - `billing_estimate`: total billed minutes and breakdown by OS
+   - `runner_distribution`: count of jobs per runner OS
+   - `per_workflow`: per-workflow run count, success rate, avg duration
+   - `per_job`: per-job run count, success rate, avg duration, avg queue wait
+   - `timing`: avg/max job duration and queue wait times
+3. Read the jobs data JSON file for detailed per-run job timing and runner labels
+4. Analyze against the dimensions above
+5. Output findings as JSON
 
 ## Output Format
 

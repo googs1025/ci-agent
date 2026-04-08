@@ -89,10 +89,18 @@ class GitHubClient:
 
         return runs
 
-    async def get_run_jobs(self, owner: str, repo: str, run_id: int) -> list[dict]:
-        """Get jobs for a specific workflow run."""
+    async def get_run_jobs(
+        self, owner: str, repo: str, run_id: int, filter: str = "latest"
+    ) -> list[dict]:
+        """Get jobs for a specific workflow run.
+
+        Args:
+            filter: "latest" for most recent attempt only, "all" for all attempts.
+        """
         data = await self._request(
-            "GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"
+            "GET",
+            f"/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
+            params={"filter": filter},
         )
         return data.get("jobs", [])
 

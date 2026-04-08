@@ -31,9 +31,14 @@ ERRORS_PROMPT = """You are a CI pipeline error analysis specialist. Your job is 
 ## Instructions
 
 1. Read the workflow YAML files to understand the pipeline structure
-2. Read the runs history JSON file (contains recent run data with status/timing)
-3. Read the failure logs JSON file (contains error logs from failed runs)
-4. Analyze patterns and output findings
+2. Read the usage statistics JSON file — it contains pre-computed data:
+   - `conclusion_counts`: how many runs ended in success/failure/cancelled
+   - `per_workflow`: per-workflow success rate and avg duration
+   - `per_job`: per-job success rate, avg duration, avg queue wait
+   - `slowest_steps`: top 10 slowest steps with job name and duration
+3. Read the jobs data JSON file for per-run job details with step-level timing
+4. Read the failure logs JSON file (contains error logs from failed runs)
+5. Analyze patterns and output findings
 
 ## Output Format
 
