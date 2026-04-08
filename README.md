@@ -1,23 +1,47 @@
 # ci-agent
 
-AI-powered GitHub CI pipeline analyzer and optimizer, built with Python Claude Agent SDK.
+AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude) 和 OpenAI 双引擎。
 
 ## Features
 
-- **Multi-dimensional analysis**: Execution efficiency, security best practices, cost optimization, error pattern analysis
-- **Dual interface**: CLI tool + Web UI (Next.js dashboard)
-- **Smart filtering**: Filter by time range, workflow, status, branch
-- **GitHub integration**: Analyze local repos or remote GitHub URLs
-- **Historical tracking**: SQLite-backed report history with Dashboard overview
+- **四维度分析**: 执行效率、安全最佳实践、成本优化、错误模式分析
+- **双 AI 引擎**: Anthropic (Claude Agent SDK) / OpenAI (任意兼容端点)
+- **双交互方式**: CLI 命令行 + Web UI (Next.js Dashboard)
+- **多语言报告**: 中文 / 英文
+- **CI 使用率统计**: Job 耗时、排队时间、Runner 分布、计费估算、最慢 Step 排名
+- **智能输入**: 支持 GitHub URL / `owner/repo` 简写 / 本地路径
+- **灵活过滤**: 时间范围、Workflow、状态、分支
 
 ## Architecture
 
 ```
-Orchestrator Agent
-├── Efficiency Analyst  (parallelization, caching, matrix)
-├── Security Analyst    (permissions, pinning, secrets)
-├── Cost Analyst        (billing, runners, redundancy)
-└── Error Analyst       (failure patterns, root causes)
+                    ┌─────────────────────┐
+                    │   CLI / Web UI      │
+                    └─────────┬───────────┘
+                              │
+                    ┌─────────▼───────────┐
+                    │   FastAPI Backend    │
+                    └─────────┬───────────┘
+                              │
+              ┌───────────────▼───────────────┐
+              │       Agent Orchestrator       │
+              │   config.provider =            │
+              │   ┌─────────┬───────────┐     │
+              │   │anthropic│  openai   │     │
+              │   │(Claude  │ (GPT/任意 │     │
+              │   │ Agent   │  兼容端点) │     │
+              │   │ SDK)    │ streaming │     │
+              │   └─────────┴───────────┘     │
+              │           │                    │
+              │  ┌────────┼────────┬────────┐  │
+              │  ▼        ▼       ▼        ▼  │
+              │ 效率    安全     成本     错误  │
+              │ 专家    专家     专家     专家  │
+              └───────────────────────────────┘
+                              │
+                    ┌─────────▼───────────┐
+                    │  SQLite + GitHub API │
+                    └─────────────────────┘
 ```
 
 ## Quick Start
@@ -26,128 +50,135 @@ Orchestrator Agent
 
 - Python 3.10+
 - Node.js 18+ (for Web UI)
-- `ANTHROPIC_API_KEY` — Claude API key
-- `GITHUB_TOKEN` — GitHub personal access token (for API data)
+- AI API Key (Anthropic 或 OpenAI 二选一)
+- `GITHUB_TOKEN` (可选，用于获取 CI 运行历史)
 
 ### Install
 
 ```bash
-# Clone
 git clone https://github.com/googs1025/ci-agent.git
 cd ci-agent
 
-# Python backend
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-# Copy env
 cp .env.example .env
-# Edit .env with your API keys
+# 编辑 .env 填入 API Key
 ```
 
 ### Configuration
 
-配置模型和 API Key 有三种方式，优先级从高到低：
-
-**1. 命令行参数（单次生效）**
+#### Provider 选择
 
 ```bash
-ci-agent analyze --model claude-opus-4-20250514 --api-key sk-ant-... https://github.com/owner/repo
-```
-
-**2. 环境变量**
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export GITHUB_TOKEN=ghp_...
-export CI_AGENT_MODEL=claude-opus-4-20250514
-```
-
-**3. 持久化配置文件（~/.ci-agent/config.json）**
-
-```bash
-# 设置模型
-ci-agent config set model claude-opus-4-20250514
-
-# 设置 API Key
+# 方式一：使用 Anthropic (Claude)
+ci-agent config set provider anthropic
 ci-agent config set anthropic_api_key sk-ant-...
-ci-agent config set github_token ghp_...
+ci-agent config set model claude-sonnet-4-20250514
 
-# 设置备选模型
-ci-agent config set fallback_model claude-sonnet-4-20250514
-
-# 设置最大轮次
-ci-agent config set max_turns 30
-
-# 查看当前配置（敏感值会脱敏显示）
-ci-agent config show
-
-# 查看配置文件路径
-ci-agent config path
+# 方式二：使用 OpenAI (或任意兼容端点)
+ci-agent config set provider openai
+ci-agent config set openai_api_key sk-...
+ci-agent config set model gpt-5.4
+ci-agent config set base_url http://your-endpoint/v1   # 可选，默认 OpenAI 官方
 ```
 
-可配置项：
+#### 所有配置项
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `model` | Agent 使用的模型 | `claude-sonnet-4-20250514` |
-| `fallback_model` | 备选模型 | - |
-| `anthropic_api_key` | Anthropic API Key | - |
-| `github_token` | GitHub Token (用于获取 CI 运行历史) | - |
-| `max_turns` | Agent 最大对话轮次 | `20` |
+| Key | 环境变量 | 默认值 | 说明 |
+|-----|---------|--------|------|
+| `provider` | `CI_AGENT_PROVIDER` | `anthropic` | AI 引擎: `anthropic` / `openai` |
+| `model` | `CI_AGENT_MODEL` | `claude-sonnet-4-20250514` | 模型名 |
+| `anthropic_api_key` | `ANTHROPIC_API_KEY` | - | Anthropic API Key |
+| `openai_api_key` | `OPENAI_API_KEY` | - | OpenAI API Key |
+| `base_url` | `CI_AGENT_BASE_URL` | - | 自定义 API 端点 |
+| `github_token` | `GITHUB_TOKEN` | - | GitHub Token |
+| `language` | `CI_AGENT_LANGUAGE` | `en` | 报告语言: `en` / `zh` |
+| `max_turns` | - | `20` | Agent 最大轮次 |
 
-Web API 也支持配置：
+优先级: CLI 参数 > 环境变量 > `~/.ci-agent/config.json` > 默认值
+
+#### 配置命令
 
 ```bash
-# 查看配置
+ci-agent config show          # 查看当前配置（敏感值脱敏）
+ci-agent config set key value # 设置配置项
+ci-agent config path          # 查看配置文件路径
+```
+
+#### Web API 配置
+
+```bash
+# 查看
 curl http://localhost:8000/api/config
 
-# 更新配置
+# 更新
 curl -X PUT http://localhost:8000/api/config \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-opus-4-20250514"}'
+  -d '{"provider": "openai", "model": "gpt-5.4", "language": "zh"}'
 
-# 单次分析使用不同模型
+# 单次分析使用不同配置
 curl -X POST http://localhost:8000/api/analyze \
   -H "Content-Type: application/json" \
-  -d '{"repo": "https://github.com/owner/repo", "agent_config": {"model": "claude-opus-4-20250514"}}'
+  -d '{"repo": "owner/repo", "agent_config": {"provider": "openai", "model": "gpt-4o", "language": "zh"}}'
 ```
 
 ### CLI Usage
 
 ```bash
-# Analyze a local repo
-ci-agent analyze /path/to/your/repo
+# 三种输入方式
+ci-agent analyze owner/repo                              # GitHub 简写
+ci-agent analyze https://github.com/owner/repo           # GitHub URL
+ci-agent analyze /path/to/local/repo                     # 本地路径
 
-# Analyze a GitHub repo
-ci-agent analyze https://github.com/owner/repo
+# 带过滤条件
+ci-agent analyze owner/repo \
+  --since 2024-01-01 --status failure --branch main
 
-# With filters
-ci-agent analyze https://github.com/owner/repo \
-  --since 2024-01-01 \
-  --status failure \
-  --branch main \
+# 指定 provider / 语言 / 输出格式
+ci-agent analyze owner/repo \
+  --provider openai --model gpt-5.4 --lang zh \
   --format json -o report.json
-
-# Use a specific model for this run
-ci-agent analyze --model claude-opus-4-20250514 https://github.com/owner/repo
 ```
 
 ### Web UI
 
 ```bash
-# Start API server
+# 启动后端
 ci-agent serve --port 8000
 
-# In another terminal, start frontend
-cd web
-npm install
-npm run dev
+# 启动前端（另一个终端）
+cd web && npm install && npm run dev
 ```
 
-Open http://localhost:3000
+打开 http://localhost:3000
+
+### Docker
+
+```bash
+cp .env.example .env
+# 编辑 .env
+
+docker compose up -d
+# Frontend: http://localhost:3000
+# Backend:  http://localhost:8000
+```
+
+详细部署文档见 [docs/deployment.md](docs/deployment.md)
 
 ## Tech Stack
 
-- **Backend**: Python, Claude Agent SDK, FastAPI, SQLAlchemy, SQLite
-- **Frontend**: Next.js 14, Tailwind CSS, TypeScript
-- **AI**: Claude (via Agent SDK) with orchestrator + specialist agent pattern
+| 层 | 技术 |
+|---|------|
+| AI (Anthropic) | Claude Agent SDK, 编排器 + 子 Agent 模式 |
+| AI (OpenAI) | OpenAI Python SDK, streaming, 并行 specialist |
+| Backend | Python 3.10+, FastAPI, SQLAlchemy, SQLite |
+| Frontend | Next.js 14, Tailwind CSS, TypeScript |
+| Infra | Docker, Kubernetes, GitHub API |
+
+## Docs
+
+- [架构设计](docs/design.md)
+- [K8s 部署](docs/deployment.md)
+- [产品 Roadmap](docs/roadmap.md)
+- [Webhook 设计](docs/webhook-design.md)
