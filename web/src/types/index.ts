@@ -22,6 +22,8 @@ export interface Finding {
   line?: number;
   suggestion?: string;
   impact?: string;
+  code_snippet?: string;
+  suggested_code?: string;
 }
 
 // ──────────────────────────────────────────────────────────

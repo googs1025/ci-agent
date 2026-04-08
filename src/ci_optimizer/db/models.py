@@ -53,5 +53,7 @@ class Finding(Base):
     line: Mapped[int | None]
     suggestion: Mapped[str | None] = mapped_column(Text)
     impact: Mapped[str | None]
+    code_snippet: Mapped[str | None] = mapped_column(Text)
+    suggested_code: Mapped[str | None] = mapped_column(Text)
 
     report: Mapped["AnalysisReport"] = relationship(back_populates="findings")

@@ -2,6 +2,8 @@
 
 from claude_agent_sdk import AgentDefinition
 
+from ci_optimizer.agents.prompts import FINDING_JSON_FORMAT
+
 ERRORS_PROMPT = """You are a CI pipeline error analysis specialist. Your job is to analyze CI run history and failure logs to identify common failure patterns and suggest fixes.
 
 ## Analysis Dimensions
@@ -26,7 +28,6 @@ ERRORS_PROMPT = """You are a CI pipeline error analysis specialist. Your job is 
    - Timeout adjustments
    - Dependency pinning to avoid resolution failures
    - Test stabilization suggestions
-   - Workflow structure changes to isolate failures
 
 ## Instructions
 
@@ -38,36 +39,9 @@ ERRORS_PROMPT = """You are a CI pipeline error analysis specialist. Your job is 
    - `slowest_steps`: top 10 slowest steps with job name and duration
 3. Read the jobs data JSON file for per-run job details with step-level timing
 4. Read the failure logs JSON file (contains error logs from failed runs)
-5. Analyze patterns and output findings
-
-## Output Format
-
-Return ONLY a JSON object:
-
-```json
-{
-  "findings": [
-    {
-      "severity": "critical|major|minor|info",
-      "title": "Short description of the failure pattern",
-      "description": "Detailed analysis of the failure pattern, frequency, and root cause",
-      "file": "workflow file where the failure occurs (if applicable)",
-      "line": null,
-      "suggestion": "Specific fix or mitigation strategy",
-      "impact": "Expected improvement in reliability/success rate"
-    }
-  ]
-}
-```
-
-Severity guide:
-- critical: Failures blocking CI >50% of the time
-- major: Recurring failures (>20% rate) with known fix
-- minor: Occasional failures with workaround available
-- info: Potential future issues or hardening suggestions
-
-If no run history data is available, analyze the workflow files for common failure-prone patterns (missing error handling, no retries, tight timeouts, etc.) and note that historical data was not available.
-"""
+5. For each finding, quote the EXACT problematic code and provide the fix
+6. Analyze patterns and output findings
+""" + FINDING_JSON_FORMAT
 
 error_agent = AgentDefinition(
     description="CI pipeline error analysis specialist. Analyzes failure patterns, root causes, flaky tests, and suggests reliability improvements based on run history and logs.",

@@ -2,6 +2,8 @@
 
 from claude_agent_sdk import AgentDefinition
 
+from ci_optimizer.agents.prompts import FINDING_JSON_FORMAT
+
 EFFICIENCY_PROMPT = """You are a CI pipeline efficiency specialist. Your job is to analyze GitHub Actions workflow files and identify opportunities to reduce execution time.
 
 ## Analysis Dimensions
@@ -19,35 +21,10 @@ EFFICIENCY_PROMPT = """You are a CI pipeline efficiency specialist. Your job is 
 ## Instructions
 
 1. Read each workflow YAML file using the Read tool
-2. Analyze against the dimensions above
-3. Output your findings as a JSON object
-
-## Output Format
-
-Return ONLY a JSON object (no markdown, no explanation outside the JSON):
-
-```json
-{
-  "findings": [
-    {
-      "severity": "critical|major|minor|info",
-      "title": "Short description of the finding",
-      "description": "Detailed explanation of the issue",
-      "file": "relative/path/to/workflow.yml",
-      "line": 42,
-      "suggestion": "Specific change to make",
-      "impact": "Estimated time savings or improvement"
-    }
-  ]
-}
-```
-
-Severity guide:
-- critical: Major inefficiency causing >50% wasted time
-- major: Significant optimization opportunity (20-50% savings)
-- minor: Small improvement (5-20% savings)
-- info: Best practice suggestion, minimal impact
-"""
+2. For each finding, quote the EXACT current code and provide replacement code
+3. Analyze against the dimensions above
+4. Output your findings as a JSON object
+""" + FINDING_JSON_FORMAT
 
 efficiency_agent = AgentDefinition(
     description="CI pipeline efficiency specialist. Analyzes parallelization, caching, conditional execution, and matrix optimization opportunities.",

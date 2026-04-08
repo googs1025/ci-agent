@@ -209,6 +209,8 @@ async def get_report_detail(
                 line=f.line,
                 suggestion=f.suggestion,
                 impact=f.impact,
+                code_snippet=f.code_snippet,
+                suggested_code=f.suggested_code,
             )
             for f in report.findings
         ],

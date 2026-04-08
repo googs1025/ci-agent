@@ -31,6 +31,8 @@ I18N = {
         "file": "File",
         "suggestion": "Suggestion",
         "impact": "Impact",
+        "current_code": "Current code",
+        "suggested_code": "Suggested code",
         "filters_applied": "Filters Applied",
         "dimensions": {
             "efficiency": "Execution Efficiency",
@@ -54,6 +56,8 @@ I18N = {
         "file": "文件",
         "suggestion": "建议",
         "impact": "影响",
+        "current_code": "当前代码",
+        "suggested_code": "建议代码",
         "filters_applied": "已应用的过滤条件",
         "dimensions": {
             "efficiency": "执行效率",
@@ -137,16 +141,30 @@ def format_markdown(
 
         lines.append("")
 
-        # Add detailed descriptions
+        # Add detailed descriptions with code snippets
         for i, f in enumerate(findings, 1):
-            if f.get("description"):
-                lines.append(f"**{i}. {f.get('title', '')}**")
-                lines.append(f"")
-                lines.append(f"{f['description']}")
-                if f.get("impact"):
-                    lines.append(f"")
-                    lines.append(f"**{t['impact']}:** {f['impact']}")
+            if f.get("description") or f.get("code_snippet") or f.get("suggested_code"):
+                file_ref = f"`{f['file']}:{f['line']}`" if f.get("file") and f.get("line") else ""
+                lines.append(f"**{i}. {f.get('title', '')}** {file_ref}")
                 lines.append("")
+                if f.get("description"):
+                    lines.append(f"{f['description']}")
+                    lines.append("")
+                if f.get("code_snippet"):
+                    lines.append(f"**{t.get('current_code', 'Current code')}:**")
+                    lines.append("```yaml")
+                    lines.append(f"{f['code_snippet']}")
+                    lines.append("```")
+                    lines.append("")
+                if f.get("suggested_code"):
+                    lines.append(f"**{t.get('suggested_code', 'Suggested code')}:**")
+                    lines.append("```yaml")
+                    lines.append(f"{f['suggested_code']}")
+                    lines.append("```")
+                    lines.append("")
+                if f.get("impact"):
+                    lines.append(f"**{t['impact']}:** {f['impact']}")
+                    lines.append("")
 
     # Filters applied
     if ctx.filters:

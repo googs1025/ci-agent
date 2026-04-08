@@ -2,6 +2,8 @@
 
 from claude_agent_sdk import AgentDefinition
 
+from ci_optimizer.agents.prompts import FINDING_JSON_FORMAT
+
 COST_PROMPT = """You are a CI pipeline cost optimization specialist. Your job is to analyze GitHub Actions workflow files and run history to identify ways to reduce GitHub Actions billing.
 
 ## Key Facts
@@ -32,35 +34,10 @@ COST_PROMPT = """You are a CI pipeline cost optimization specialist. Your job is
    - `per_job`: per-job run count, success rate, avg duration, avg queue wait
    - `timing`: avg/max job duration and queue wait times
 3. Read the jobs data JSON file for detailed per-run job timing and runner labels
-4. Analyze against the dimensions above
-5. Output findings as JSON
-
-## Output Format
-
-Return ONLY a JSON object:
-
-```json
-{
-  "findings": [
-    {
-      "severity": "critical|major|minor|info",
-      "title": "Short description",
-      "description": "Detailed explanation",
-      "file": "relative/path/to/workflow.yml",
-      "line": 42,
-      "suggestion": "Specific change to reduce cost",
-      "impact": "Estimated cost/minute savings"
-    }
-  ]
-}
-```
-
-Severity guide:
-- critical: >50% cost reduction opportunity
-- major: 20-50% cost reduction
-- minor: 5-20% savings
-- info: Minor optimization
-"""
+4. For each finding, quote the EXACT current code and provide cost-optimized replacement
+5. Analyze against the dimensions above
+6. Output findings as JSON
+""" + FINDING_JSON_FORMAT
 
 cost_agent = AgentDefinition(
     description="CI pipeline cost optimization specialist. Analyzes trigger optimization, runner selection, job consolidation, and resource usage to reduce GitHub Actions billing.",

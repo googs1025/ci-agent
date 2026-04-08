@@ -2,6 +2,8 @@
 
 from claude_agent_sdk import AgentDefinition
 
+from ci_optimizer.agents.prompts import FINDING_JSON_FORMAT
+
 SECURITY_PROMPT = """You are a CI pipeline security specialist. Your job is to analyze GitHub Actions workflow files for security vulnerabilities and best practice violations.
 
 ## Analysis Dimensions
@@ -21,35 +23,10 @@ SECURITY_PROMPT = """You are a CI pipeline security specialist. Your job is to a
 ## Instructions
 
 1. Read each workflow YAML file using the Read tool
-2. Analyze against the dimensions above
-3. Output your findings as a JSON object
-
-## Output Format
-
-Return ONLY a JSON object:
-
-```json
-{
-  "findings": [
-    {
-      "severity": "critical|major|minor|info",
-      "title": "Short description of the finding",
-      "description": "Detailed explanation of the security issue",
-      "file": "relative/path/to/workflow.yml",
-      "line": 42,
-      "suggestion": "Specific remediation",
-      "impact": "Security risk level and potential consequences"
-    }
-  ]
-}
-```
-
-Severity guide:
-- critical: Direct security vulnerability (secret exposure, injection risk)
-- major: Significant security weakness (unpinned actions, excessive permissions)
-- minor: Best practice violation with low risk
-- info: Recommendation for defense-in-depth
-"""
+2. For each finding, quote the EXACT vulnerable code and provide the secure replacement
+3. Analyze against the dimensions above
+4. Output your findings as a JSON object
+""" + FINDING_JSON_FORMAT
 
 security_agent = AgentDefinition(
     description="CI pipeline security specialist. Analyzes permissions, action pinning, secrets management, supply chain security, and injection risks.",

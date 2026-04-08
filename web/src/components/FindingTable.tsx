@@ -203,6 +203,28 @@ export default function FindingTable({ findings }: FindingTableProps) {
                           </div>
                         )}
 
+                        {finding.code_snippet && (
+                          <div>
+                            <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-1">
+                              Current Code
+                            </p>
+                            <pre className="bg-red-500/5 border border-red-500/20 rounded-lg px-4 py-3 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap">
+                              {finding.code_snippet}
+                            </pre>
+                          </div>
+                        )}
+
+                        {finding.suggested_code && (
+                          <div>
+                            <p className="text-xs font-semibold text-green-400 uppercase tracking-wide mb-1">
+                              Suggested Code
+                            </p>
+                            <pre className="bg-green-500/5 border border-green-500/20 rounded-lg px-4 py-3 text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap">
+                              {finding.suggested_code}
+                            </pre>
+                          </div>
+                        )}
+
                         {finding.impact && (
                           <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">

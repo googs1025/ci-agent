@@ -40,6 +40,8 @@ class FindingSchema(BaseModel):
     line: int | None = None
     suggestion: str | None = None
     impact: str | None = None
+    code_snippet: str | None = None
+    suggested_code: str | None = None
 
 
 class ReportSummary(BaseModel):

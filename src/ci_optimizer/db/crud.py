@@ -66,6 +66,8 @@ async def complete_report(
             line=f.get("line"),
             suggestion=f.get("suggestion"),
             impact=f.get("impact"),
+            code_snippet=f.get("code_snippet"),
+            suggested_code=f.get("suggested_code"),
         )
         session.add(finding)
 
