@@ -3,11 +3,14 @@
 import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ci_optimizer.api.routes import router
 from ci_optimizer.db.database import init_db
+
+load_dotenv()
 
 
 @asynccontextmanager
