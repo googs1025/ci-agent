@@ -30,6 +30,8 @@ def parse_args():
     analyze.add_argument("--model", "-m", help="Model to use (e.g. claude-sonnet-4-20250514, claude-opus-4-20250514)")
     analyze.add_argument("--api-key", help="Anthropic API key (overrides config and env)")
     analyze.add_argument("--lang", choices=["en", "zh"], help="Report language: en (English) or zh (Chinese)")
+    analyze.add_argument("--provider", choices=["anthropic", "openai"], help="AI provider: anthropic or openai")
+    analyze.add_argument("--base-url", help="Custom API base URL (for OpenAI-compatible endpoints)")
     analyze.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     # serve command
@@ -66,6 +68,10 @@ def _build_config(args) -> "AgentConfig":
         config.anthropic_api_key = args.api_key
     if hasattr(args, "lang") and args.lang:
         config.language = args.lang
+    if hasattr(args, "provider") and args.provider:
+        config.provider = args.provider
+    if hasattr(args, "base_url") and args.base_url:
+        config.base_url = args.base_url
 
     return config
 
@@ -81,18 +87,28 @@ async def run_analyze(args):
     config = _build_config(args)
 
     # Validate API key
-    if not config.anthropic_api_key:
-        print(
-            "Error: No Anthropic API key configured.\n"
-            "Set it via one of:\n"
-            "  ci-agent config set anthropic_api_key sk-ant-...\n"
-            "  export ANTHROPIC_API_KEY=sk-ant-...\n"
-            "  ci-agent analyze --api-key sk-ant-... <repo>",
-            file=sys.stderr,
-        )
+    if not config.get_api_key():
+        if config.provider == "openai":
+            print(
+                "Error: No OpenAI API key configured.\n"
+                "Set it via one of:\n"
+                "  ci-agent config set openai_api_key sk-...\n"
+                "  export OPENAI_API_KEY=sk-...\n"
+                "  ci-agent config set provider openai",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "Error: No Anthropic API key configured.\n"
+                "Set it via one of:\n"
+                "  ci-agent config set anthropic_api_key sk-ant-...\n"
+                "  export ANTHROPIC_API_KEY=sk-ant-...\n"
+                "  ci-agent analyze --api-key sk-ant-... <repo>",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
-    print(f"Using model: {config.model}", file=sys.stderr)
+    print(f"Using provider: {config.provider}, model: {config.model}", file=sys.stderr)
 
     # Build filters
     time_range = None

@@ -15,13 +15,20 @@ DEFAULT_MODEL = "claude-sonnet-4-20250514"
 class AgentConfig:
     """Configuration for the AI agent system."""
 
+    # Provider: "anthropic" or "openai"
+    provider: str = "anthropic"
+
     # Model settings
     model: str = DEFAULT_MODEL
     fallback_model: str | None = None
 
-    # API keys
+    # API keys (used based on provider)
     anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
     github_token: str | None = None
+
+    # Custom API base URL (for OpenAI-compatible endpoints)
+    base_url: str | None = None
 
     # Agent behavior
     max_turns: int = 20
@@ -59,6 +66,12 @@ class AgentConfig:
             config.model = env_model
         if env_lang := os.getenv("CI_AGENT_LANGUAGE"):
             config.language = env_lang
+        if env_provider := os.getenv("CI_AGENT_PROVIDER"):
+            config.provider = env_provider
+        if env_base_url := os.getenv("CI_AGENT_BASE_URL"):
+            config.base_url = env_base_url
+        if env_openai_key := os.getenv("OPENAI_API_KEY"):
+            config.openai_api_key = env_openai_key
 
         return config
 
@@ -69,13 +82,17 @@ class AgentConfig:
             env["ANTHROPIC_API_KEY"] = self.anthropic_api_key
         return env
 
+    def get_api_key(self) -> str | None:
+        """Get the API key for the configured provider."""
+        if self.provider == "openai":
+            return self.openai_api_key
+        return self.anthropic_api_key
+
     def to_display_dict(self) -> dict:
         """Return config as dict with sensitive values masked."""
         d = asdict(self)
-        if d.get("anthropic_api_key"):
-            key = d["anthropic_api_key"]
-            d["anthropic_api_key"] = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
-        if d.get("github_token"):
-            token = d["github_token"]
-            d["github_token"] = f"{token[:8]}...{token[-4:]}" if len(token) > 12 else "***"
+        for key_field in ("anthropic_api_key", "openai_api_key", "github_token"):
+            if d.get(key_field):
+                val = d[key_field]
+                d[key_field] = f"{val[:8]}...{val[-4:]}" if len(val) > 12 else "***"
         return d

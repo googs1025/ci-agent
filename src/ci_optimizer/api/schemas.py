@@ -13,10 +13,13 @@ class FilterSchema(BaseModel):
 
 
 class AgentConfigSchema(BaseModel):
+    provider: str | None = None  # "anthropic" or "openai"
     model: str | None = None
     fallback_model: str | None = None
     anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
     github_token: str | None = None
+    base_url: str | None = None
     max_turns: int | None = None
     language: str | None = None  # "en" or "zh"
 
