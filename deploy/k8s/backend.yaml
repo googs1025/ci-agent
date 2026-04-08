@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ci-agent-backend
+  namespace: ci-agent
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: ci-agent
+spec:
+  replicas: 1                                     # SQLite does not support multi-replica
+  strategy:
+    type: Recreate                                # Avoid concurrent SQLite access
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+        app.kubernetes.io/part-of: ci-agent
+    spec:
+      containers:
+        - name: backend
+          image: ci-agent-backend:latest          # Replace with your registry
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - secretRef:
+                name: ci-agent-secrets
+            - configMapRef:
+                name: ci-agent-config
+          env:
+            - name: HOME
+              value: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data/.ci-agent
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ci-agent-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-agent-backend
+  namespace: ci-agent
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: ci-agent
+spec:
+  selector:
+    app.kubernetes.io/name: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
