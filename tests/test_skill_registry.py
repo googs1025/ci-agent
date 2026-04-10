@@ -306,6 +306,32 @@ class TestSkillSelection:
         assert len(skills) == 2
 
 
+class TestBuiltinSkills:
+    """Test that real builtin SKILL.md files load correctly."""
+
+    def test_load_builtin_skills(self):
+        """Verify all 4 builtin skills load from the project skills/ directory."""
+        from ci_optimizer.agents.skill_registry import _BUILTIN_DIR
+
+        registry = SkillRegistry(
+            builtin_dir=_BUILTIN_DIR,
+            user_dir=Path("/nonexistent"),
+        )
+        registry.load()
+        skills = registry.get_active_skills()
+
+        dims = {s.dimension for s in skills}
+        assert dims == {"efficiency", "security", "cost", "errors"}
+
+        names = {s.name for s in skills}
+        assert names == {"efficiency-analyst", "security-analyst", "cost-analyst", "error-analyst"}
+
+        for s in skills:
+            assert s.source == "builtin"
+            assert len(s.prompt) > 100  # non-trivial prompt
+            assert s.tools == ["Read", "Glob", "Grep"]
+
+
 class TestCollectRequiredData:
     """Test requires_data aggregation."""
 
