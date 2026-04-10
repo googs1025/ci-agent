@@ -84,20 +84,31 @@ def _parse_result(raw_text: str) -> tuple[str, list[dict], dict]:
 
 
 async def run_analysis(
-    ctx: AnalysisContext, config: AgentConfig | None = None
+    ctx: AnalysisContext,
+    config: AgentConfig | None = None,
+    selected_skills: list[str] | None = None,
 ) -> AnalysisResult:
     """Run analysis using the configured provider engine.
 
     Routes to:
       - Anthropic engine (Claude Agent SDK) when provider="anthropic"
       - OpenAI engine (OpenAI SDK) when provider="openai"
+
+    selected_skills: list of dimension names to run, or None for all.
     """
     if config is None:
         config = AgentConfig.load()
 
+    from ci_optimizer.agents.skill_registry import SkillRegistry
+    registry = SkillRegistry().load()
+    skills = registry.get_active_skills(selected=selected_skills)
+
+    if not skills:
+        raise RuntimeError("No active skills found. Check skills/ directory.")
+
     if config.provider == "openai":
         from ci_optimizer.agents.openai_engine import run_analysis_openai
-        return await run_analysis_openai(ctx, config)
+        return await run_analysis_openai(ctx, config, skills)
     else:
         from ci_optimizer.agents.anthropic_engine import run_analysis_anthropic
-        return await run_analysis_anthropic(ctx, config)
+        return await run_analysis_anthropic(ctx, config, skills)

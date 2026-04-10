@@ -4,67 +4,55 @@ import asyncio
 import json
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-from ci_optimizer.agents.prompts import (
-    LANGUAGE_INSTRUCTIONS,
-    ORCHESTRATOR_PROMPT,
-)
-from ci_optimizer.agents.efficiency import EFFICIENCY_PROMPT
-from ci_optimizer.agents.security import SECURITY_PROMPT
-from ci_optimizer.agents.cost import COST_PROMPT
-from ci_optimizer.agents.errors import ERRORS_PROMPT
+from ci_optimizer.agents.prompts import LANGUAGE_INSTRUCTIONS
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.prefetch import AnalysisContext
 
-
-SPECIALISTS = {
-    "efficiency": EFFICIENCY_PROMPT,
-    "security": SECURITY_PROMPT,
-    "cost": COST_PROMPT,
-    "error": ERRORS_PROMPT,
-}
+if TYPE_CHECKING:
+    from ci_optimizer.agents.skill_registry import Skill
 
 
-def _build_context_text(ctx: AnalysisContext) -> str:
-    """Build context description for the LLM."""
-    parts = [f"Repository: {ctx.owner}/{ctx.repo}" if ctx.owner else f"Path: {ctx.local_path}"]
-    parts.append(f"Workflow files ({len(ctx.workflow_files)}):")
-    for wf in ctx.workflow_files:
-        parts.append(f"  - {wf.name}")
+def _build_context_for_skill(ctx: AnalysisContext, requires: list[str]) -> str:
+    """Build context text for a single skill based on its requires_data."""
+    parts = []
+    if ctx.owner:
+        parts.append(f"Repository: {ctx.owner}/{ctx.repo}")
+    else:
+        parts.append(f"Path: {ctx.local_path}")
 
-    # Read workflow files content
-    for wf in ctx.workflow_files:
-        try:
-            content = wf.read_text()
-            parts.append(f"\n--- {wf.name} ---\n{content}")
-        except OSError:
-            pass
+    if "workflows" in requires:
+        parts.append(f"Workflow files ({len(ctx.workflow_files)}):")
+        for wf in ctx.workflow_files:
+            parts.append(f"  - {wf.name}")
+        for wf in ctx.workflow_files:
+            try:
+                content = wf.read_text()
+                parts.append(f"\n--- {wf.name} ---\n{content}")
+            except OSError:
+                pass
 
-    # Read usage stats
-    if ctx.usage_stats_json_path and ctx.usage_stats_json_path.exists():
-        try:
-            stats = ctx.usage_stats_json_path.read_text()
-            parts.append(f"\n--- Usage Statistics ---\n{stats}")
-        except OSError:
-            pass
-
-    # Read jobs data (summarized)
-    if ctx.jobs_json_path and ctx.jobs_json_path.exists():
+    if "jobs" in requires and ctx.jobs_json_path and ctx.jobs_json_path.exists():
         try:
             jobs_text = ctx.jobs_json_path.read_text()
-            # Truncate if too large
             if len(jobs_text) > 30000:
                 jobs_text = jobs_text[:30000] + "\n... (truncated)"
             parts.append(f"\n--- Jobs Data ---\n{jobs_text}")
         except OSError:
             pass
 
-    # Read failure logs
-    if ctx.logs_json_path and ctx.logs_json_path.exists():
+    if "usage_stats" in requires and ctx.usage_stats_json_path and ctx.usage_stats_json_path.exists():
+        try:
+            parts.append(f"\n--- Usage Statistics ---\n{ctx.usage_stats_json_path.read_text()}")
+        except OSError:
+            pass
+
+    if "logs" in requires and ctx.logs_json_path and ctx.logs_json_path.exists():
         try:
             logs_text = ctx.logs_json_path.read_text()
             if len(logs_text) > 20000:
@@ -107,7 +95,7 @@ async def _call_specialist(
 
 
 async def run_analysis_openai(
-    ctx: AnalysisContext, config: AgentConfig
+    ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]"
 ) -> "AnalysisResult":
     """Run analysis using OpenAI-compatible API with parallel specialist calls."""
     start_time = time.time()
@@ -118,7 +106,7 @@ async def run_analysis_openai(
     )
 
     try:
-        return await _run_analysis_with_client(client, ctx, config, start_time)
+        return await _run_analysis_with_client(client, ctx, config, start_time, skills)
     finally:
         await client.close()
 
@@ -128,27 +116,32 @@ async def _run_analysis_with_client(
     ctx: AnalysisContext,
     config: AgentConfig,
     start_time: float,
+    skills: "list[Skill]",
 ) -> "AnalysisResult":
     from ci_optimizer.agents.orchestrator import AnalysisResult, _parse_result
+    from ci_optimizer.agents.skill_registry import SkillRegistry
 
-    context_text = _build_context_text(ctx)
     model = config.model
     language = config.language
 
-    # Step 1: Run all 4 specialists in parallel
-    logger.info(f"Starting 4 specialist analyses with model={model}, language={language}")
+    # Step 1: Run all specialists in parallel, each with its own context
+    logger.info(
+        f"Starting {len(skills)} specialist analyses with model={model}, language={language}, "
+        f"skills={[s.dimension for s in skills]}"
+    )
 
-    async def _run_specialist(name: str, prompt: str) -> tuple[str, str]:
+    async def _run_specialist(skill: "Skill") -> tuple[str, str]:
         try:
-            result = await _call_specialist(client, model, prompt, context_text, language)
-            logger.info(f"Specialist {name} returned {len(result)} chars")
-            return name, result
+            context_text = _build_context_for_skill(ctx, skill.requires_data)
+            result = await _call_specialist(client, model, skill.prompt, context_text, language)
+            logger.info(f"Specialist {skill.dimension} returned {len(result)} chars")
+            return skill.dimension, result
         except Exception as e:
-            logger.error(f"Specialist {name} failed: {e}")
-            return name, json.dumps({
+            logger.error(f"Specialist {skill.dimension} failed: {e}")
+            return skill.dimension, json.dumps({
                 "findings": [{
                     "severity": "info",
-                    "title": f"Analysis failed for {name}",
+                    "title": f"Analysis failed for {skill.dimension}",
                     "description": str(e),
                     "file": "",
                     "suggestion": "Check API configuration",
@@ -156,22 +149,22 @@ async def _run_analysis_with_client(
                 }]
             })
 
-    results = await asyncio.gather(
-        *[_run_specialist(name, prompt) for name, prompt in SPECIALISTS.items()]
-    )
+    results = await asyncio.gather(*[_run_specialist(s) for s in skills])
     specialist_results = dict(results)
 
     # Step 2: Orchestrator synthesizes all results
+    registry = SkillRegistry()
+    orchestrator_prompt = registry.build_orchestrator_prompt(skills)
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
     synthesis_prompt = (
-        ORCHESTRATOR_PROMPT + lang_instruction +
+        orchestrator_prompt + lang_instruction +
         "\n\nSynthesize the following specialist reports into a unified analysis. "
         "Output ONLY the JSON object described above."
     )
 
     specialist_summary = "\n\n".join(
-        f"=== {name.upper()} ANALYST REPORT ===\n{report}"
-        for name, report in specialist_results.items()
+        f"=== {dim.upper()} ANALYST REPORT ===\n{report}"
+        for dim, report in specialist_results.items()
     )
 
     logger.info(f"Synthesizing {len(specialist_results)} specialist reports ({len(specialist_summary)} chars)")
@@ -240,9 +233,15 @@ def _fallback_combine(specialist_results: dict[str, str]) -> str:
         except (json.JSONDecodeError, ValueError):
             pass
 
+    # Build dimensions dict from whatever dimensions were found
+    dim_buckets: dict[str, list] = {}
+    for f in all_findings:
+        dim = f.get("dimension", "unknown")
+        dim_buckets.setdefault(dim, []).append(f)
+
     result = {
         "executive_summary": "Combined analysis from all specialists.",
-        "dimensions": {},
+        "dimensions": {dim: {"findings": findings} for dim, findings in dim_buckets.items()},
         "stats": {
             "total_findings": len(all_findings),
             "critical": sum(1 for f in all_findings if f.get("severity") == "critical"),
@@ -251,10 +250,5 @@ def _fallback_combine(specialist_results: dict[str, str]) -> str:
             "info": sum(1 for f in all_findings if f.get("severity") == "info"),
         },
     }
-
-    for dim in ("efficiency", "security", "cost", "error"):
-        result["dimensions"][dim] = {
-            "findings": [f for f in all_findings if f.get("dimension") == dim]
-        }
 
     return json.dumps(result)

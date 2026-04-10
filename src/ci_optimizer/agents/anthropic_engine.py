@@ -3,74 +3,24 @@
 import json
 import logging
 import time
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import (
-    AgentDefinition,
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
-    ToolUseBlock,
     query,
 )
 
-from ci_optimizer.agents.cost import cost_agent
-from ci_optimizer.agents.efficiency import efficiency_agent
-from ci_optimizer.agents.errors import error_agent
 from ci_optimizer.agents.prompts import LANGUAGE_INSTRUCTIONS
-from ci_optimizer.agents.security import security_agent
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.prefetch import AnalysisContext
 
-ORCHESTRATOR_PROMPT = """You are a CI pipeline analysis orchestrator. Your role is to coordinate 4 specialist agents to produce a comprehensive analysis report.
-
-## Your Workflow
-
-1. Call ALL 4 specialist agents to analyze the CI pipeline:
-   - **efficiency-analyst**: Execution efficiency (parallelization, caching, matrix optimization)
-   - **security-analyst**: Security vulnerabilities and best practices
-   - **cost-analyst**: Cost optimization (billable minutes, runner selection)
-   - **error-analyst**: Failure patterns and reliability issues
-
-2. After receiving all 4 specialist reports, synthesize them into a unified analysis.
-
-3. Produce your final output as a JSON object with this structure:
-
-```json
-{
-  "executive_summary": "Top 5 most impactful recommendations across all dimensions, ordered by priority",
-  "dimensions": {
-    "efficiency": { "findings": [...] },
-    "security": { "findings": [...] },
-    "cost": { "findings": [...] },
-    "error": { "findings": [...] }
-  },
-  "stats": {
-    "total_findings": 0,
-    "critical": 0,
-    "major": 0,
-    "minor": 0,
-    "info": 0
-  }
-}
-```
-
-## Important
-
-- Call all 4 specialists. Do not skip any dimension.
-- Each specialist will return findings in JSON format. Include them as-is in the dimensions section.
-- The executive_summary should identify cross-cutting themes and prioritize the TOP 5 actions by impact.
-- Add a "dimension" field to each finding if not already present.
-"""
-
-AGENTS = {
-    "efficiency-analyst": efficiency_agent,
-    "security-analyst": security_agent,
-    "cost-analyst": cost_agent,
-    "error-analyst": error_agent,
-}
+if TYPE_CHECKING:
+    from ci_optimizer.agents.skill_registry import Skill
 
 
 def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
@@ -102,7 +52,7 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
             parts.append(f"\nApplied filters: {json.dumps(filter_desc)}")
 
     parts.append(
-        "\nPlease dispatch all 4 specialist agents to analyze these files, "
+        "\nPlease dispatch all specialist agents to analyze these files, "
         "then produce the unified report."
     )
     parts.append(LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"]))
@@ -110,26 +60,19 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
     return "\n".join(parts)
 
 
-def _build_agents(config: AgentConfig) -> dict[str, AgentDefinition]:
-    """Build agent definitions with model config."""
-    if config.model:
-        return {
-            name: AgentDefinition(
-                description=agent.description,
-                prompt=agent.prompt,
-                tools=agent.tools,
-                model=config.model,
-            )
-            for name, agent in AGENTS.items()
-        }
-    return AGENTS
-
-
 async def run_analysis_anthropic(
-    ctx: AnalysisContext, config: AgentConfig
+    ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]"
 ) -> "AnalysisResult":
-    """Run analysis using Claude Agent SDK."""
+    """Run analysis using Claude Agent SDK with dynamically loaded skills."""
     from ci_optimizer.agents.orchestrator import AnalysisResult
+    from ci_optimizer.agents.skill_registry import SkillRegistry
+
+    # Build agents from skills
+    agents = {s.name: s.to_agent_definition(config.model) for s in skills}
+
+    # Build orchestrator prompt dynamically
+    registry = SkillRegistry()
+    orchestrator_prompt = registry.build_orchestrator_prompt(skills)
 
     prompt = _build_analysis_prompt(ctx, language=config.language)
     start_time = time.time()
@@ -137,10 +80,8 @@ async def run_analysis_anthropic(
     collected_text = []
     result = AnalysisResult()
 
-    agents = _build_agents(config)
-
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(config.language, LANGUAGE_INSTRUCTIONS["en"])
-    system_prompt = ORCHESTRATOR_PROMPT + lang_instruction
+    system_prompt = orchestrator_prompt + lang_instruction
 
     sdk_options = ClaudeAgentOptions(
         system_prompt=system_prompt,
@@ -159,7 +100,10 @@ async def run_analysis_anthropic(
     if sdk_env:
         sdk_options.env = sdk_env
 
-    logger.info(f"Starting Anthropic analysis: model={config.model}, lang={config.language}, max_turns={config.max_turns}")
+    logger.info(
+        f"Starting Anthropic analysis: model={config.model}, lang={config.language}, "
+        f"max_turns={config.max_turns}, skills={[s.name for s in skills]}"
+    )
     message_count = 0
     try:
         async for message in query(
