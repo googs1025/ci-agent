@@ -76,6 +76,7 @@ async def _run_analysis_task(
     repo_input: str,
     filters: AnalysisFilters | None,
     config: AgentConfig | None = None,
+    selected_skills: list[str] | None = None,
 ):
     """Background task to run the analysis."""
     import logging
@@ -87,10 +88,17 @@ async def _run_analysis_task(
     async with async_session() as session:
         try:
             logger.info(f"[report={report_id}] Starting analysis: repo={repo_input}, provider={config.provider if config else 'default'}, lang={config.language if config else 'default'}")
+
+            # Load skills to compute required data
+            from ci_optimizer.agents.skill_registry import SkillRegistry
+            registry = SkillRegistry().load()
+            skills = registry.get_active_skills(selected=selected_skills)
+            required_data = registry.collect_required_data(skills)
+
             resolved = resolve_input(repo_input)
-            ctx = await prepare_context(resolved, filters)
-            logger.info(f"[report={report_id}] Prefetch done: {len(ctx.workflow_files)} workflows")
-            result = await run_analysis(ctx, config=config)
+            ctx = await prepare_context(resolved, filters, required_data=required_data)
+            logger.info(f"[report={report_id}] Prefetch done: {len(ctx.workflow_files)} workflows, required={required_data}")
+            result = await run_analysis(ctx, config=config, selected_skills=selected_skills)
             logger.info(f"[report={report_id}] Analysis done: {len(result.findings)} findings, {len(result.raw_report)} chars raw")
 
             lang = config.language if config else "en"

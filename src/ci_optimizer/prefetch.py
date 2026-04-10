@@ -228,8 +228,13 @@ def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> d
 async def prepare_context(
     resolved: ResolvedInput,
     filters: AnalysisFilters | None = None,
+    required_data: set[str] | None = None,
 ) -> AnalysisContext:
-    """Pre-fetch all data needed for analysis."""
+    """Pre-fetch all data needed for analysis.
+
+    required_data: set of data types to fetch. None = fetch all (backward compatible).
+    Valid values: {"workflows", "runs", "jobs", "logs", "usage_stats"}
+    """
     ctx = AnalysisContext(
         local_path=resolved.local_path,
         owner=resolved.owner,
@@ -237,7 +242,7 @@ async def prepare_context(
         filters=filters,
     )
 
-    # Collect workflow files
+    # Collect workflow files (always — local file system, no API cost)
     workflows_dir = resolved.local_path / ".github" / "workflows"
     if workflows_dir.exists():
         ctx.workflow_files = sorted(
@@ -251,101 +256,112 @@ async def prepare_context(
             "Make sure the repository has .github/workflows/*.yml files."
         )
 
+    # Compute which data types are needed
+    # Implicit dependency: usage_stats requires runs + jobs to compute
+    need_all = required_data is None
+    need_usage = need_all or "usage_stats" in required_data
+    need_runs = need_all or "runs" in required_data or "jobs" in required_data or need_usage
+    need_jobs = need_all or "jobs" in required_data or need_usage
+    need_logs = need_all or "logs" in required_data
+
     # Fetch GitHub API data if we have owner/repo
     if ctx.owner and ctx.repo:
         client = GitHubClient()
         try:
-            # Fetch run history
-            runs = await client.list_workflow_runs(ctx.owner, ctx.repo, filters)
-            ctx.runs_json_path = _write_temp_json(runs, "runs")
-
-            # Fetch jobs for runs (cap to avoid rate limiting)
-            runs_for_jobs = runs[:MAX_RUNS_FOR_JOBS]
-            if len(runs) > MAX_RUNS_FOR_JOBS:
-                logger.info(
-                    f"Limiting job fetch to {MAX_RUNS_FOR_JOBS}/{len(runs)} runs "
-                    f"to avoid API rate limits"
-                )
+            runs: list[dict] = []
             all_jobs: dict[str, list[dict]] = {}
-            for i, run in enumerate(runs_for_jobs):
-                run_id = run["id"]
-                try:
-                    jobs = await client.get_run_jobs(ctx.owner, ctx.repo, run_id)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch jobs for run {run_id}: {e}")
-                    continue
-                # Brief pause every 10 requests to stay under secondary rate limits
-                if (i + 1) % 10 == 0:
-                    await asyncio.sleep(1)
-                all_jobs[str(run_id)] = [
-                    {
-                        "id": j.get("id"),
-                        "name": j.get("name"),
-                        "status": j.get("status"),
-                        "conclusion": j.get("conclusion"),
-                        "created_at": j.get("created_at"),
-                        "started_at": j.get("started_at"),
-                        "completed_at": j.get("completed_at"),
-                        "runner_id": j.get("runner_id"),
-                        "runner_name": j.get("runner_name"),
-                        "labels": j.get("labels", []),
-                        "steps": [
-                            {
-                                "name": s.get("name"),
-                                "status": s.get("status"),
-                                "conclusion": s.get("conclusion"),
-                                "number": s.get("number"),
-                                "started_at": s.get("started_at"),
-                                "completed_at": s.get("completed_at"),
-                            }
-                            for s in j.get("steps", [])
-                        ],
-                    }
-                    for j in jobs
-                ]
-            ctx.jobs_json_path = _write_temp_json(all_jobs, "jobs")
 
-            # Compute usage stats
-            usage_stats = _compute_usage_stats(runs, all_jobs)
-            ctx.usage_stats_json_path = _write_temp_json(usage_stats, "usage")
+            if need_runs:
+                runs = await client.list_workflow_runs(ctx.owner, ctx.repo, filters)
+                ctx.runs_json_path = _write_temp_json(runs, "runs")
 
-            # Fetch failure logs (limit to 5 most recent failed runs)
-            failed_runs = [r for r in runs if r.get("conclusion") == "failure"][:5]
-            logs = {}
-            for run in failed_runs:
-                run_id = run["id"]
-                run_jobs = all_jobs.get(str(run_id), [])
-                failed_jobs = [j for j in run_jobs if j.get("conclusion") == "failure"]
-                log_text = await client.get_run_logs(ctx.owner, ctx.repo, run_id)
-                logs[str(run_id)] = {
-                    "run": {
-                        "id": run_id,
-                        "name": run.get("name"),
-                        "created_at": run.get("created_at"),
-                        "head_branch": run.get("head_branch"),
-                    },
-                    "failed_jobs": [
+            if need_jobs:
+                # Fetch jobs for runs (cap to avoid rate limiting)
+                runs_for_jobs = runs[:MAX_RUNS_FOR_JOBS]
+                if len(runs) > MAX_RUNS_FOR_JOBS:
+                    logger.info(
+                        f"Limiting job fetch to {MAX_RUNS_FOR_JOBS}/{len(runs)} runs "
+                        f"to avoid API rate limits"
+                    )
+                for i, run in enumerate(runs_for_jobs):
+                    run_id = run["id"]
+                    try:
+                        jobs = await client.get_run_jobs(ctx.owner, ctx.repo, run_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch jobs for run {run_id}: {e}")
+                        continue
+                    # Brief pause every 10 requests to stay under secondary rate limits
+                    if (i + 1) % 10 == 0:
+                        await asyncio.sleep(1)
+                    all_jobs[str(run_id)] = [
                         {
+                            "id": j.get("id"),
                             "name": j.get("name"),
+                            "status": j.get("status"),
                             "conclusion": j.get("conclusion"),
+                            "created_at": j.get("created_at"),
                             "started_at": j.get("started_at"),
                             "completed_at": j.get("completed_at"),
+                            "runner_id": j.get("runner_id"),
+                            "runner_name": j.get("runner_name"),
+                            "labels": j.get("labels", []),
                             "steps": [
-                                s for s in j.get("steps", [])
-                                if s.get("conclusion") == "failure"
+                                {
+                                    "name": s.get("name"),
+                                    "status": s.get("status"),
+                                    "conclusion": s.get("conclusion"),
+                                    "number": s.get("number"),
+                                    "started_at": s.get("started_at"),
+                                    "completed_at": s.get("completed_at"),
+                                }
+                                for s in j.get("steps", [])
                             ],
                         }
-                        for j in failed_jobs
-                    ],
-                    "log_excerpt": log_text,
-                }
-            ctx.logs_json_path = _write_temp_json(logs, "logs")
+                        for j in jobs
+                    ]
+                ctx.jobs_json_path = _write_temp_json(all_jobs, "jobs")
 
-            # Fetch workflow definitions
+            if need_usage and runs and all_jobs:
+                # Compute usage stats
+                usage_stats = _compute_usage_stats(runs, all_jobs)
+                ctx.usage_stats_json_path = _write_temp_json(usage_stats, "usage")
+
+            if need_logs and runs:
+                # Fetch failure logs (limit to 5 most recent failed runs)
+                failed_runs = [r for r in runs if r.get("conclusion") == "failure"][:5]
+                logs = {}
+                for run in failed_runs:
+                    run_id = run["id"]
+                    run_jobs = all_jobs.get(str(run_id), [])
+                    failed_jobs = [j for j in run_jobs if j.get("conclusion") == "failure"]
+                    log_text = await client.get_run_logs(ctx.owner, ctx.repo, run_id)
+                    logs[str(run_id)] = {
+                        "run": {
+                            "id": run_id,
+                            "name": run.get("name"),
+                            "created_at": run.get("created_at"),
+                            "head_branch": run.get("head_branch"),
+                        },
+                        "failed_jobs": [
+                            {
+                                "name": j.get("name"),
+                                "conclusion": j.get("conclusion"),
+                                "started_at": j.get("started_at"),
+                                "completed_at": j.get("completed_at"),
+                                "steps": [
+                                    s for s in j.get("steps", [])
+                                    if s.get("conclusion") == "failure"
+                                ],
+                            }
+                            for j in failed_jobs
+                        ],
+                        "log_excerpt": log_text,
+                    }
+                ctx.logs_json_path = _write_temp_json(logs, "logs")
+
+            # Always fetch workflow definitions and repo info when we have owner/repo
             workflows = await client.get_workflows(ctx.owner, ctx.repo)
             ctx.workflows_json_path = _write_temp_json(workflows, "workflows")
-
-            # Fetch repo info
             ctx.repo_info = await client.get_repo_info(ctx.owner, ctx.repo)
 
         finally:
