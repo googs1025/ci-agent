@@ -186,3 +186,163 @@ class TestSkillParsing:
         )
         registry.load()
         assert len(registry.get_active_skills()) == 0
+
+
+class TestSkillOverride:
+    """Test user skill overrides builtin."""
+
+    def test_user_overrides_builtin(self, tmp_path):
+        builtin_dir = tmp_path / "builtin"
+        user_dir = tmp_path / "user"
+
+        # Builtin skill
+        bd = builtin_dir / "security"
+        bd.mkdir(parents=True)
+        (bd / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: security-analyst
+            description: Builtin security
+            dimension: security
+            ---
+
+            Builtin prompt.
+        """))
+
+        # User skill with same name
+        ud = user_dir / "security"
+        ud.mkdir(parents=True)
+        (ud / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: security-analyst
+            description: Custom security with compliance
+            dimension: security
+            priority: 200
+            ---
+
+            Custom prompt with compliance rules.
+        """))
+
+        registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
+        registry.load()
+        skills = registry.get_active_skills()
+
+        assert len(skills) == 1
+        assert skills[0].description == "Custom security with compliance"
+        assert skills[0].source == "user"
+        assert skills[0].priority == 200
+
+    def test_user_adds_new_dimension(self, tmp_path):
+        builtin_dir = tmp_path / "builtin"
+        user_dir = tmp_path / "user"
+
+        bd = builtin_dir / "security"
+        bd.mkdir(parents=True)
+        (bd / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: security-analyst
+            description: Security
+            dimension: security
+            ---
+
+            Security prompt.
+        """))
+
+        ud = user_dir / "reliability"
+        ud.mkdir(parents=True)
+        (ud / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: reliability-analyst
+            description: Reliability
+            dimension: reliability
+            requires_data:
+              - workflows
+              - jobs
+            ---
+
+            Reliability prompt.
+        """))
+
+        registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
+        registry.load()
+        skills = registry.get_active_skills()
+
+        assert len(skills) == 2
+        dims = {s.dimension for s in skills}
+        assert dims == {"security", "reliability"}
+
+
+class TestSkillSelection:
+    """Test --skills filtering."""
+
+    def _make_skills(self, tmp_path, names):
+        for name in names:
+            d = tmp_path / name
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "SKILL.md").write_text(textwrap.dedent(f"""\
+                ---
+                name: {name}-analyst
+                description: {name} analysis
+                dimension: {name}
+                ---
+
+                Analyze {name}.
+            """))
+
+    def test_select_subset(self, tmp_path):
+        self._make_skills(tmp_path, ["efficiency", "security", "cost", "errors"])
+        registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
+        registry.load()
+
+        skills = registry.get_active_skills(selected=["security", "cost"])
+        dims = [s.dimension for s in skills]
+        assert set(dims) == {"security", "cost"}
+
+    def test_select_all_when_none(self, tmp_path):
+        self._make_skills(tmp_path, ["efficiency", "security"])
+        registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
+        registry.load()
+
+        skills = registry.get_active_skills(selected=None)
+        assert len(skills) == 2
+
+
+class TestCollectRequiredData:
+    """Test requires_data aggregation."""
+
+    def test_collect_union(self, tmp_path):
+        d1 = tmp_path / "s1"
+        d1.mkdir()
+        (d1 / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: s1
+            description: S1
+            dimension: d1
+            requires_data:
+              - workflows
+            ---
+
+            Prompt 1.
+        """))
+
+        d2 = tmp_path / "s2"
+        d2.mkdir()
+        (d2 / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: s2
+            description: S2
+            dimension: d2
+            requires_data:
+              - workflows
+              - jobs
+              - logs
+            ---
+
+            Prompt 2.
+        """))
+
+        registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
+        registry.load()
+        skills = registry.get_active_skills()
+        required = registry.collect_required_data(skills)
+
+        assert required == {"workflows", "jobs", "logs"}
