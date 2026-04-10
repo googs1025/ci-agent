@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import FilterPanel from '@/components/FilterPanel';
+import SkillsSelector from '@/components/SkillsSelector';
 import { analyzeRepo, getReport } from '@/lib/api';
 import type { AnalyzeFilters } from '@/types';
 
@@ -28,6 +29,7 @@ export default function AnalyzePage() {
   const router = useRouter();
   const [repoInput, setRepoInput] = useState('');
   const [filters, setFilters] = useState<AnalyzeFilters>({});
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>({ type: 'idle' });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -47,7 +49,11 @@ export default function AnalyzePage() {
     setPhase({ type: 'submitting' });
 
     try {
-      const { report_id } = await analyzeRepo({ repo, filters });
+      const { report_id } = await analyzeRepo({
+        repo,
+        filters,
+        skills: selectedSkills.length > 0 ? selectedSkills : undefined,
+      });
       setPhase({ type: 'polling', reportId: report_id, dots: 0 });
 
       // Animate dots independently
@@ -233,6 +239,9 @@ export default function AnalyzePage() {
             </div>
           </div>
 
+          {/* Skills selector */}
+          <SkillsSelector selected={selectedSkills} onChange={setSelectedSkills} />
+
           {/* Filters */}
           <FilterPanel filters={filters} onChange={setFilters} />
 
@@ -241,7 +250,7 @@ export default function AnalyzePage() {
             <button
               type="submit"
               className="btn-primary px-8"
-              disabled={!repoInput.trim()}
+              disabled={!repoInput.trim() || selectedSkills.length === 0}
             >
               Start Analysis
             </button>

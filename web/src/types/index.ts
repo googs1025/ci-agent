@@ -62,6 +62,22 @@ export interface AnalyzeFilters {
 export interface AnalyzeRequest {
   repo: string;
   filters?: AnalyzeFilters;
+  skills?: string[];  // dimension names; undefined = all
+}
+
+// ──────────────────────────────────────────────────────────
+// Skills
+// ──────────────────────────────────────────────────────────
+
+export interface Skill {
+  name: string;
+  description: string;
+  dimension: string;
+  source: 'builtin' | 'user';
+  enabled: boolean;
+  priority: number;
+  tools: string[];
+  requires_data: string[];
 }
 
 export interface AnalyzeResponse {

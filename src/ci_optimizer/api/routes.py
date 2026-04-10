@@ -17,6 +17,7 @@ from ci_optimizer.api.schemas import (
     ReportSummary,
     RepositorySchema,
     FindingSchema,
+    SkillSchema,
 )
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.db.crud import (
@@ -298,6 +299,30 @@ async def update_config(updates: AgentConfigSchema):
         config.max_turns = updates.max_turns
     config.save()
     return config.to_display_dict()
+
+
+@router.get("/skills", response_model=list[SkillSchema])
+async def get_skills():
+    """List all available analysis skills (builtin + user)."""
+    from ci_optimizer.agents.skill_registry import SkillRegistry
+    registry = SkillRegistry().load()
+    # Include all skills (enabled + disabled) so users can see what's available
+    all_skills = list(registry._skills.values())
+    # Sort by priority desc, then name
+    all_skills.sort(key=lambda s: (-s.priority, s.name))
+    return [
+        SkillSchema(
+            name=s.name,
+            description=s.description,
+            dimension=s.dimension,
+            source=s.source,
+            enabled=s.enabled,
+            priority=s.priority,
+            tools=s.tools,
+            requires_data=s.requires_data,
+        )
+        for s in all_skills
+    ]
 
 
 @router.get("/repositories", response_model=list[RepositorySchema])

@@ -5,6 +5,7 @@ import type {
   Report,
   ReportsListResponse,
   Repository,
+  Skill,
 } from '@/types';
 
 // When running in the browser the Next.js rewrite proxies /api/* → FastAPI.
@@ -91,4 +92,11 @@ export async function getDashboard(): Promise<DashboardData> {
  */
 export async function getRepositories(): Promise<Repository[]> {
   return request<Repository[]>('/api/repositories');
+}
+
+/**
+ * Fetch the list of available analysis skills (builtin + user).
+ */
+export async function getSkills(): Promise<Skill[]> {
+  return request<Skill[]>('/api/skills');
 }

@@ -89,6 +89,18 @@ class RepositorySchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SkillSchema(BaseModel):
+    """Skill definition exposed via API."""
+    name: str
+    description: str
+    dimension: str
+    source: str  # "builtin" or "user"
+    enabled: bool
+    priority: int
+    tools: list[str]
+    requires_data: list[str]
+
+
 class DashboardResponse(BaseModel):
     repo_count: int
     analysis_count: int
