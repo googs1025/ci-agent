@@ -176,7 +176,7 @@ async def analyze(
     await db.commit()
 
     background_tasks.add_task(
-        _run_analysis_task, report.id, request.repo, filters, config
+        _run_analysis_task, report.id, request.repo, filters, config, request.skills
     )
 
     return {"report_id": report.id, "status": "running"}

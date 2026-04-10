@@ -28,6 +28,7 @@ class AnalyzeRequest(BaseModel):
     repo: str  # local path or GitHub URL
     filters: FilterSchema | None = None
     agent_config: AgentConfigSchema | None = None  # per-request overrides
+    skills: list[str] | None = None  # dimension names to run, None = all
 
 
 class FindingSchema(BaseModel):
