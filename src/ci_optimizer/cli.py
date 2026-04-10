@@ -33,6 +33,7 @@ def parse_args():
     analyze.add_argument("--provider", choices=["anthropic", "openai"], help="AI provider: anthropic or openai")
     analyze.add_argument("--base-url", help="Custom API base URL (for OpenAI-compatible endpoints)")
     analyze.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    analyze.add_argument("--skills", help="Comma-separated list of dimensions to run (e.g. security,cost). Default: all")
 
     # serve command
     serve = subparsers.add_parser("serve", help="Start the API server")
@@ -51,6 +52,15 @@ def parse_args():
     config_set.add_argument("value", help="Config value")
 
     config_sub.add_parser("path", help="Show config file path")
+
+    # skills command
+    skills_cmd = subparsers.add_parser("skills", help="List and inspect available analysis skills")
+    skills_sub = skills_cmd.add_subparsers(dest="skills_action")
+
+    skills_sub.add_parser("list", help="List all discovered skills")
+
+    skills_show = skills_sub.add_parser("show", help="Show details of a specific skill")
+    skills_show.add_argument("name", help="Skill name (e.g. security-analyst)")
 
     return parser.parse_args()
 
@@ -151,7 +161,8 @@ async def run_analyze(args):
 
     # Run analysis
     print("Running analysis (this may take a few minutes)...", file=sys.stderr)
-    result = await run_analysis(ctx, config=config)
+    selected = args.skills.split(",") if args.skills else None
+    result = await run_analysis(ctx, config=config, selected_skills=selected)
 
     # Format output
     if args.format == "json":
@@ -218,6 +229,46 @@ def run_config(args):
         sys.exit(1)
 
 
+def run_skills(args):
+    from ci_optimizer.agents.skill_registry import SkillRegistry
+
+    registry = SkillRegistry().load()
+
+    if args.skills_action == "list":
+        skills = registry.get_active_skills()
+        if not skills:
+            print("No skills found.")
+            return
+
+        print(f"{'DIMENSION':<16} {'NAME':<24} {'SOURCE':<10} {'ENABLED':<10} {'PRIORITY'}")
+        for s in skills:
+            print(f"{s.dimension:<16} {s.name:<24} {s.source:<10} {str(s.enabled):<10} {s.priority}")
+
+    elif args.skills_action == "show":
+        skills = registry.get_active_skills()
+        skill = next((s for s in skills if s.name == args.name), None)
+        # Also check disabled skills
+        if not skill:
+            all_skills = list(registry._skills.values())
+            skill = next((s for s in all_skills if s.name == args.name), None)
+        if not skill:
+            print(f"Skill not found: {args.name}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Name:          {skill.name}")
+        print(f"Description:   {skill.description}")
+        print(f"Dimension:     {skill.dimension}")
+        print(f"Source:        {skill.source} ({skill.source_path})")
+        print(f"Tools:         {', '.join(skill.tools)}")
+        print(f"Requires Data: {', '.join(skill.requires_data)}")
+        print(f"Enabled:       {skill.enabled}")
+        print(f"Priority:      {skill.priority}")
+
+    else:
+        print("Usage: ci-agent skills {list|show}")
+        sys.exit(1)
+
+
 def main():
     load_dotenv()
     args = parse_args()
@@ -228,8 +279,10 @@ def main():
         run_serve(args)
     elif args.command == "config":
         run_config(args)
+    elif args.command == "skills":
+        run_skills(args)
     else:
-        print("Usage: ci-agent {analyze|serve|config} [options]")
+        print("Usage: ci-agent {analyze|serve|config|skills} [options]")
         print("Run 'ci-agent --help' for more information.")
         sys.exit(1)
 
