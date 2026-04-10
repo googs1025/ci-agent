@@ -161,12 +161,21 @@ export default async function ReportDetailPage({
     {} as Record<Dimension, Finding[]>,
   );
 
-  const dimensions: { key: Dimension; label: string; count: number }[] = [
-    { key: 'efficiency', label: 'Efficiency', count: (byDimension.efficiency ?? []).length },
-    { key: 'security', label: 'Security', count: (byDimension.security ?? []).length },
-    { key: 'cost', label: 'Cost', count: (byDimension.cost ?? []).length },
-    { key: 'errors', label: 'Errors', count: (byDimension.errors ?? []).length },
+  // Build dimensions dynamically from findings
+  const dimensionKeys = Array.from(new Set(findings.map((f) => f.dimension)));
+  // Keep known dimensions in standard order, append unknown ones
+  const KNOWN_ORDER: string[] = ['efficiency', 'security', 'cost', 'errors'];
+  const ordered = [
+    ...KNOWN_ORDER.filter((k) => dimensionKeys.includes(k)),
+    ...dimensionKeys.filter((k) => !KNOWN_ORDER.includes(k)),
   ];
+  // Ensure at least the known dimensions are shown even if no findings (for empty state)
+  const dimensionsToShow = ordered.length > 0 ? ordered : KNOWN_ORDER;
+  const dimensions: { key: Dimension; label: string; count: number }[] = dimensionsToShow.map((key) => ({
+    key,
+    label: key.charAt(0).toUpperCase() + key.slice(1),
+    count: (byDimension[key] ?? []).length,
+  }));
 
   return (
     <div className="space-y-8">

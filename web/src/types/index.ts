@@ -4,7 +4,7 @@
 
 export type Severity = 'critical' | 'major' | 'minor' | 'info';
 
-export type Dimension = 'efficiency' | 'security' | 'cost' | 'errors';
+export type Dimension = string;
 
 export type ReportStatus = 'pending' | 'running' | 'completed' | 'failed';
 

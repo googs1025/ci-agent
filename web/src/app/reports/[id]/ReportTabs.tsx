@@ -15,19 +15,22 @@ interface ReportTabsProps {
   byDimension: Partial<Record<Dimension, Finding[]>>;
 }
 
-const DIMENSION_ACCENT: Record<Dimension, string> = {
+const DIMENSION_ACCENT: Record<string, string> = {
   efficiency: 'text-accent-blue border-accent-blue',
   security: 'text-accent-purple border-accent-purple',
   cost: 'text-accent-green border-accent-green',
   errors: 'text-accent-red border-accent-red',
 };
 
-const DIMENSION_COUNT_BG: Record<Dimension, string> = {
+const DIMENSION_COUNT_BG: Record<string, string> = {
   efficiency: 'bg-blue-500/15 text-blue-400',
   security: 'bg-purple-500/15 text-purple-400',
   cost: 'bg-green-500/15 text-green-400',
   errors: 'bg-red-500/15 text-red-400',
 };
+
+const DEFAULT_ACCENT = 'text-slate-300 border-slate-300';
+const DEFAULT_COUNT_BG = 'bg-slate-500/15 text-slate-400';
 
 export default function ReportTabs({ dimensions, byDimension }: ReportTabsProps) {
   const firstWithFindings = dimensions.find((d) => d.count > 0)?.key ?? dimensions[0].key;
@@ -54,7 +57,7 @@ export default function ReportTabs({ dimensions, byDimension }: ReportTabsProps)
               className={[
                 'flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors duration-150 rounded-t-lg',
                 isActive
-                  ? `${DIMENSION_ACCENT[dim.key]} bg-surface-elevated`
+                  ? `${DIMENSION_ACCENT[dim.key] ?? DEFAULT_ACCENT} bg-surface-elevated`
                   : 'border-transparent text-slate-400 hover:text-slate-200',
               ].join(' ')}
             >
@@ -63,7 +66,7 @@ export default function ReportTabs({ dimensions, byDimension }: ReportTabsProps)
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
                     isActive
-                      ? DIMENSION_COUNT_BG[dim.key]
+                      ? (DIMENSION_COUNT_BG[dim.key] ?? DEFAULT_COUNT_BG)
                       : 'bg-surface-elevated text-slate-500'
                   }`}
                 >
