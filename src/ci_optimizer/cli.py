@@ -77,6 +77,56 @@ def parse_args():
         help="Tell the running API server to reload skills (POST /api/skills/reload)",
     )
 
+    # skills import — from Claude Code / OpenCode / local path
+    skills_import = skills_sub.add_parser(
+        "import",
+        help="Import a skill from Claude Code, OpenCode, or a local directory",
+    )
+    skills_import.add_argument(
+        "--from",
+        dest="source",
+        required=True,
+        choices=["claude-code", "opencode", "path"],
+        help="Source type",
+    )
+    skills_import.add_argument(
+        "target",
+        help="Skill name (for claude-code/opencode) or directory path (for path)",
+    )
+    skills_import.add_argument(
+        "--dimension",
+        required=True,
+        help="Dimension to assign (e.g. efficiency, security, cost, errors, or custom)",
+    )
+    skills_import.add_argument(
+        "--requires-data",
+        help="Comma-separated data deps (default: workflows). "
+             "Valid: workflows,runs,jobs,logs,usage_stats,action_shas",
+    )
+    skills_import.add_argument(
+        "--name",
+        help="Override the skill name (default: taken from source SKILL.md)",
+    )
+
+    # skills install — from git URL
+    skills_install = skills_sub.add_parser(
+        "install",
+        help="Install a skill from a GitHub repository",
+    )
+    skills_install.add_argument(
+        "url",
+        help="Repository URL (https://github.com/owner/repo or gh:owner/repo)",
+    )
+    skills_install.add_argument("--dimension", required=True, help="Dimension to assign")
+    skills_install.add_argument("--requires-data", help="Comma-separated data deps")
+
+    # skills uninstall
+    skills_uninstall = skills_sub.add_parser(
+        "uninstall",
+        help="Remove an installed user skill",
+    )
+    skills_uninstall.add_argument("name", help="Skill directory name")
+
     return parser.parse_args()
 
 
@@ -339,12 +389,98 @@ def _validate_skill_path(path: Path) -> int:
         return 1
 
 
+def _run_skills_import(args):
+    from ci_optimizer.agents.skill_importer import (
+        SkillImportError,
+        import_from_claude_code,
+        import_from_opencode,
+        import_from_path,
+    )
+
+    rd = None
+    if args.requires_data:
+        rd = [x.strip() for x in args.requires_data.split(",") if x.strip()]
+
+    try:
+        if args.source == "claude-code":
+            result = import_from_claude_code(args.target, dimension=args.dimension, requires_data=rd)
+        elif args.source == "opencode":
+            result = import_from_opencode(args.target, dimension=args.dimension, requires_data=rd)
+        else:  # path
+            result = import_from_path(
+                Path(args.target),
+                dimension=args.dimension,
+                requires_data=rd,
+                name_override=args.name,
+                source_kind="path",
+            )
+    except SkillImportError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"✓ Imported skill '{result.name}' from {result.source_kind}")
+    print(f"  Dimension: {result.dimension}")
+    print(f"  Target:    {result.target_path}")
+    for w in result.warnings:
+        print(f"  ⚠ {w}")
+    print()
+    print("⚠  Imported skill prompts are sent to the LLM. Only import skills")
+    print("   from sources you trust. Run 'ci-agent skills show {name}' to review.")
+    print(f"\nTip: Restart the API server or run 'ci-agent skills reload' to activate.")
+
+
+def _run_skills_install(args):
+    from ci_optimizer.agents.skill_importer import SkillImportError, install_from_github
+
+    rd = None
+    if args.requires_data:
+        rd = [x.strip() for x in args.requires_data.split(",") if x.strip()]
+
+    try:
+        result = install_from_github(args.url, dimension=args.dimension, requires_data=rd)
+    except SkillImportError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"✓ Installed skill '{result.name}' from {result.source_ref}")
+    print(f"  Dimension: {result.dimension}")
+    print(f"  Target:    {result.target_path}")
+    for w in result.warnings:
+        print(f"  ⚠ {w}")
+    print()
+    print("⚠  Installed skill prompts are sent to the LLM. Only install from")
+    print("   sources you trust.")
+
+
+def _run_skills_uninstall(args):
+    from ci_optimizer.agents.skill_importer import SkillImportError, uninstall_skill
+
+    try:
+        path = uninstall_skill(args.name)
+    except SkillImportError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"✓ Removed {path}")
+
+
 def run_skills(args):
     from ci_optimizer.agents.skill_registry import SkillRegistry
 
     if args.skills_action == "validate":
         exit_code = _validate_skill_path(Path(args.path))
         sys.exit(exit_code)
+
+    if args.skills_action == "import":
+        _run_skills_import(args)
+        return
+
+    if args.skills_action == "install":
+        _run_skills_install(args)
+        return
+
+    if args.skills_action == "uninstall":
+        _run_skills_uninstall(args)
+        return
 
     if args.skills_action == "reload":
         # Ping the running server to reload its singleton registry.
@@ -400,7 +536,7 @@ def run_skills(args):
         print(f"Priority:      {skill.priority}")
 
     else:
-        print("Usage: ci-agent skills {list|show|validate}")
+        print("Usage: ci-agent skills {list|show|validate|reload|import|install|uninstall}")
         sys.exit(1)
 
 
