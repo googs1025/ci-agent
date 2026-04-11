@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,6 +70,11 @@ def parse_args():
     skills_validate.add_argument(
         "path",
         help="Path to a SKILL.md file or a directory containing one or more skill subdirs",
+    )
+
+    skills_sub.add_parser(
+        "reload",
+        help="Tell the running API server to reload skills (POST /api/skills/reload)",
     )
 
     return parser.parse_args()
@@ -339,6 +345,27 @@ def run_skills(args):
     if args.skills_action == "validate":
         exit_code = _validate_skill_path(Path(args.path))
         sys.exit(exit_code)
+
+    if args.skills_action == "reload":
+        # Ping the running server to reload its singleton registry.
+        import urllib.error
+        import urllib.request
+
+        # Default to local dev server; users can override via CI_AGENT_API_URL.
+        api_url = os.getenv("CI_AGENT_API_URL", "http://localhost:8000").rstrip("/")
+        url = f"{api_url}/api/skills/reload"
+        req = urllib.request.Request(url, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+            print(f"Reloaded {data.get('active_count', 0)} skill(s) on {api_url}")
+            for s in data.get("skills", []):
+                print(f"  - {s['dimension']:<16} {s['name']:<24} ({s['source']})")
+            sys.exit(0)
+        except urllib.error.URLError as e:
+            print(f"Error: could not reach {url}: {e.reason}", file=sys.stderr)
+            print("Is the API server running? Start it with: ci-agent serve", file=sys.stderr)
+            sys.exit(1)
 
     registry = SkillRegistry().load()
 

@@ -99,8 +99,8 @@ async def run_analysis(
     if config is None:
         config = AgentConfig.load()
 
-    from ci_optimizer.agents.skill_registry import SkillRegistry
-    registry = SkillRegistry().load()
+    from ci_optimizer.agents.skill_registry import get_registry
+    registry = get_registry()
     skills = registry.get_active_skills(selected=selected_skills)
 
     if not skills:

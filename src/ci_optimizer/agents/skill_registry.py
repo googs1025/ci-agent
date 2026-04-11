@@ -146,6 +146,13 @@ class SkillRegistry:
             result.update(s.requires_data)
         return result
 
+    def reload(self) -> "SkillRegistry":
+        """Clear cached skills and rescan the directories. Thread-unsafe."""
+        self._skills.clear()
+        self._load_dir(self._builtin_dir, source="builtin")
+        self._load_dir(self._user_dir, source="user")
+        return self
+
     def build_orchestrator_prompt(self, skills: list[Skill]) -> str:
         """Dynamically generate orchestrator prompt from active skills."""
         dim_list = "\n".join(
@@ -192,3 +199,32 @@ class SkillRegistry:
             "- The executive_summary should identify cross-cutting themes and prioritize the TOP 5 actions by impact.\n"
             '- Add a "dimension" field to each finding if not already present.\n'
         )
+
+
+# ──────────────────────────────────────────────────────────────
+# Module-level singleton accessor
+# ──────────────────────────────────────────────────────────────
+
+_global_registry: SkillRegistry | None = None
+
+
+def get_registry() -> SkillRegistry:
+    """Return a lazily-initialized, process-wide SkillRegistry singleton.
+
+    Use this from long-lived code paths (API routes, engines) so we don't
+    re-scan the filesystem on every request. Call ``get_registry().reload()``
+    to pick up on-disk changes.
+
+    Tests and CLI one-shots that want isolation can still construct a
+    ``SkillRegistry(...)`` directly.
+    """
+    global _global_registry
+    if _global_registry is None:
+        _global_registry = SkillRegistry().load()
+    return _global_registry
+
+
+def reset_registry() -> None:
+    """Discard the global singleton. Intended for tests."""
+    global _global_registry
+    _global_registry = None

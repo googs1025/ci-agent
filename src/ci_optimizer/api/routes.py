@@ -90,9 +90,9 @@ async def _run_analysis_task(
         try:
             logger.info(f"[report={report_id}] Starting analysis: repo={repo_input}, provider={config.provider if config else 'default'}, lang={config.language if config else 'default'}")
 
-            # Load skills to compute required data
-            from ci_optimizer.agents.skill_registry import SkillRegistry
-            registry = SkillRegistry().load()
+            # Load skills to compute required data (uses singleton cache)
+            from ci_optimizer.agents.skill_registry import get_registry
+            registry = get_registry()
             skills = registry.get_active_skills(selected=selected_skills)
             required_data = registry.collect_required_data(skills)
 
@@ -304,8 +304,8 @@ async def update_config(updates: AgentConfigSchema):
 @router.get("/skills", response_model=list[SkillSchema])
 async def get_skills():
     """List all available analysis skills (builtin + user)."""
-    from ci_optimizer.agents.skill_registry import SkillRegistry
-    registry = SkillRegistry().load()
+    from ci_optimizer.agents.skill_registry import get_registry
+    registry = get_registry()
     # Include all skills (enabled + disabled) so users can see what's available
     all_skills = list(registry._skills.values())
     # Sort by priority desc, then name
@@ -323,6 +323,23 @@ async def get_skills():
         )
         for s in all_skills
     ]
+
+
+@router.post("/skills/reload")
+async def reload_skills():
+    """Rescan builtin + user skill directories and refresh the registry cache."""
+    from ci_optimizer.agents.skill_registry import get_registry
+    registry = get_registry()
+    registry.reload()
+    skills = registry.get_active_skills()
+    return {
+        "reloaded": True,
+        "active_count": len(skills),
+        "skills": [
+            {"name": s.name, "dimension": s.dimension, "source": s.source}
+            for s in skills
+        ],
+    }
 
 
 @router.get("/repositories", response_model=list[RepositorySchema])

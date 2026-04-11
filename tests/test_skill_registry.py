@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ci_optimizer.agents.skill_registry import Skill, SkillRegistry
+from ci_optimizer.agents.skill_registry import (
+    Skill,
+    SkillRegistry,
+    get_registry,
+    reset_registry,
+)
 
 
 class TestSkillParsing:
@@ -372,3 +377,66 @@ class TestCollectRequiredData:
         required = registry.collect_required_data(skills)
 
         assert required == {"workflows", "jobs", "logs"}
+
+
+class TestSingletonAndReload:
+    """Test the get_registry singleton and reload behavior."""
+
+    def setup_method(self):
+        reset_registry()
+
+    def teardown_method(self):
+        reset_registry()
+
+    def test_get_registry_returns_same_instance(self):
+        r1 = get_registry()
+        r2 = get_registry()
+        assert r1 is r2
+
+    def test_get_registry_loads_builtin_skills(self):
+        skills = get_registry().get_active_skills()
+        # Should include all 4 builtins
+        dims = {s.dimension for s in skills}
+        assert {"efficiency", "security", "cost", "errors"} <= dims
+
+    def test_reset_registry_discards_instance(self):
+        r1 = get_registry()
+        reset_registry()
+        r2 = get_registry()
+        assert r1 is not r2
+
+    def test_reload_method_rescans_directory(self, tmp_path):
+        # Use a custom registry so we can control the source.
+        skill_dir = tmp_path / "test-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: test-analyst
+            description: Test
+            dimension: testing
+            ---
+
+            Prompt.
+        """))
+
+        reg = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
+        reg.load()
+        assert len(reg.get_active_skills()) == 1
+
+        # Add a second skill on disk and reload
+        skill2 = tmp_path / "second"
+        skill2.mkdir()
+        (skill2 / "SKILL.md").write_text(textwrap.dedent("""\
+            ---
+            name: second-analyst
+            description: Second
+            dimension: second
+            ---
+
+            Prompt.
+        """))
+
+        reg.reload()
+        skills = reg.get_active_skills()
+        assert len(skills) == 2
+        assert {s.dimension for s in skills} == {"testing", "second"}
