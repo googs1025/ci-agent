@@ -8,7 +8,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
-from ci_optimizer.api.schemas import (
+from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
+    SkillImportRequest,
+    SkillImportResponse,
     AgentConfigSchema,
     AnalyzeRequest,
     DashboardResponse,
@@ -342,6 +344,77 @@ async def reload_skills():
             for s in skills
         ],
     }
+
+
+@router.post("/skills/import", response_model=SkillImportResponse)
+async def import_skill(req: SkillImportRequest):
+    """Import a skill from Claude Code, OpenCode, a local path, or a GitHub repo.
+
+    After a successful import the in-memory skill registry is reloaded so the
+    new skill is immediately available for subsequent analyses.
+    """
+    from pathlib import Path as _P
+
+    from ci_optimizer.agents.skill_importer import (
+        SkillImportError,
+        import_from_claude_code,
+        import_from_opencode,
+        import_from_path,
+        install_from_github,
+    )
+    from ci_optimizer.agents.skill_registry import get_registry
+
+    try:
+        if req.source_type == "claude-code":
+            result = import_from_claude_code(
+                req.source, dimension=req.dimension, requires_data=req.requires_data
+            )
+        elif req.source_type == "opencode":
+            result = import_from_opencode(
+                req.source, dimension=req.dimension, requires_data=req.requires_data
+            )
+        elif req.source_type == "path":
+            result = import_from_path(
+                _P(req.source),
+                dimension=req.dimension,
+                requires_data=req.requires_data,
+                name_override=req.name_override,
+                source_kind="path",
+            )
+        elif req.source_type == "github":
+            result = install_from_github(
+                req.source, dimension=req.dimension, requires_data=req.requires_data
+            )
+        else:  # pragma: no cover — pydantic validates the literal
+            raise HTTPException(400, f"Unknown source_type: {req.source_type}")
+    except SkillImportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Refresh the singleton so the new skill is immediately usable
+    get_registry().reload()
+
+    return SkillImportResponse(
+        name=result.name,
+        dimension=result.dimension,
+        target_path=str(result.target_path),
+        source_kind=result.source_kind,
+        warnings=result.warnings,
+    )
+
+
+@router.delete("/skills/{name}")
+async def delete_skill(name: str):
+    """Uninstall a user-installed skill by directory name."""
+    from ci_optimizer.agents.skill_importer import SkillImportError, uninstall_skill
+    from ci_optimizer.agents.skill_registry import get_registry
+
+    try:
+        path = uninstall_skill(name)
+    except SkillImportError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    get_registry().reload()
+    return {"removed": str(path)}
 
 
 @router.get("/repositories", response_model=list[RepositorySchema])

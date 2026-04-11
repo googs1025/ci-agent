@@ -1,6 +1,8 @@
 """Pydantic request/response schemas for the API."""
 
 from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
@@ -122,6 +124,23 @@ class SkillSchema(BaseModel):
     tools: list[str]
     requires_data: list[str]
     prompt: str = ""  # full prompt body (for the detail drawer)
+
+
+class SkillImportRequest(BaseModel):
+    """Request body for POST /skills/import."""
+    source_type: Literal["claude-code", "opencode", "path", "github"]
+    source: str  # skill name (claude-code/opencode), dir path, or repo URL
+    dimension: str
+    requires_data: list[str] | None = None
+    name_override: str | None = None
+
+
+class SkillImportResponse(BaseModel):
+    name: str
+    dimension: str
+    target_path: str
+    source_kind: str
+    warnings: list[str]
 
 
 class DashboardResponse(BaseModel):

@@ -100,3 +100,36 @@ export async function getRepositories(): Promise<Repository[]> {
 export async function getSkills(): Promise<Skill[]> {
   return request<Skill[]>('/api/skills');
 }
+
+export type SkillSourceType = 'claude-code' | 'opencode' | 'path' | 'github';
+
+export interface SkillImportRequest {
+  source_type: SkillSourceType;
+  source: string;
+  dimension: string;
+  requires_data?: string[];
+  name_override?: string;
+}
+
+export interface SkillImportResponse {
+  name: string;
+  dimension: string;
+  target_path: string;
+  source_kind: string;
+  warnings: string[];
+}
+
+export async function importSkill(
+  req: SkillImportRequest,
+): Promise<SkillImportResponse> {
+  return request<SkillImportResponse>('/api/skills/import', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export async function deleteSkill(name: string): Promise<{ removed: string }> {
+  return request<{ removed: string }>(`/api/skills/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}

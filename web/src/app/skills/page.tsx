@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getSkills } from '@/lib/api';
+import { getSkills, deleteSkill } from '@/lib/api';
 import type { Skill } from '@/types';
+import InstallSkillModal from '@/components/InstallSkillModal';
 
 const DIMENSION_COLOR: Record<string, string> = {
   efficiency: 'border-accent-blue/40 bg-blue-500/5',
@@ -29,6 +30,27 @@ export default function SkillsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Skill | null>(null);
   const [reloading, setReloading] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
+
+  async function handleDelete(name: string) {
+    if (!confirm(`Uninstall skill "${name}"? This removes ~/.ci-agent/skills/${name}/.`)) return;
+    try {
+      await deleteSkill(name);
+      setSelected(null);
+      setFlashMessage(`✓ Uninstalled ${name}`);
+      setTimeout(() => setFlashMessage(null), 3000);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function handleInstallSuccess(name: string) {
+    setFlashMessage(`✓ Installed skill "${name}"`);
+    setTimeout(() => setFlashMessage(null), 3000);
+    load();
+  }
 
   function load() {
     setError(null);
@@ -72,32 +94,47 @@ export default function SkillsPage() {
             Built-in and user-defined skills that the agent uses to analyze your CI pipelines.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleReload}
-          disabled={reloading}
-          className="btn-secondary text-sm flex items-center gap-2"
-          aria-label="Reload skills from disk"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            className={reloading ? 'animate-spin' : ''}
-            aria-hidden="true"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleReload}
+            disabled={reloading}
+            className="btn-secondary text-sm flex items-center gap-2"
+            aria-label="Reload skills from disk"
           >
-            <path
-              d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          {reloading ? 'Reloading...' : 'Reload'}
-        </button>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              className={reloading ? 'animate-spin' : ''}
+              aria-hidden="true"
+            >
+              <path
+                d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {reloading ? 'Reloading...' : 'Reload'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowInstall(true)}
+            className="btn-primary text-sm"
+          >
+            + Install Skill
+          </button>
+        </div>
       </div>
+
+      {flashMessage && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-2.5 text-sm text-green-300">
+          {flashMessage}
+        </div>
+      )}
 
       {error && (
         <div
@@ -179,14 +216,25 @@ export default function SkillsPage() {
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5 truncate">{selected.description}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="text-slate-400 hover:text-slate-200 text-2xl leading-none"
-                aria-label="Close drawer"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {selected.source === 'user' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(selected.name)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    Uninstall
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="text-slate-400 hover:text-slate-200 text-2xl leading-none"
+                  aria-label="Close drawer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             <div className="px-6 py-5 space-y-5">
@@ -259,6 +307,12 @@ export default function SkillsPage() {
           </div>
         </div>
       )}
+
+      <InstallSkillModal
+        open={showInstall}
+        onClose={() => setShowInstall(false)}
+        onSuccess={handleInstallSuccess}
+      />
     </div>
   );
 }
