@@ -78,6 +78,7 @@ export interface Skill {
   priority: number;
   tools: string[];
   requires_data: string[];
+  prompt?: string;
 }
 
 export interface AnalyzeResponse {

@@ -320,6 +320,7 @@ async def get_skills():
             priority=s.priority,
             tools=s.tools,
             requires_data=s.requires_data,
+            prompt=s.prompt,
         )
         for s in all_skills
     ]

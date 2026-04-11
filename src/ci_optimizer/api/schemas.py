@@ -120,6 +120,7 @@ class SkillSchema(BaseModel):
     priority: int
     tools: list[str]
     requires_data: list[str]
+    prompt: str = ""  # full prompt body (for the detail drawer)
 
 
 class DashboardResponse(BaseModel):
