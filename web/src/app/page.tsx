@@ -20,15 +20,17 @@ function BarRow({
   value,
   max,
   colorClass,
+  href,
 }: {
   label: string;
   value: number;
   max: number;
   colorClass: string;
+  href?: string;
 }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
-  return (
-    <div className="flex items-center gap-3">
+  const inner = (
+    <div className="flex items-center gap-3 w-full">
       <span className="w-24 shrink-0 text-sm text-slate-400 capitalize text-right">
         {label}
       </span>
@@ -48,6 +50,14 @@ function BarRow({
       </span>
     </div>
   );
+  if (href && value > 0) {
+    return (
+      <Link href={href} className="flex items-center gap-3 rounded-lg hover:bg-surface-elevated transition-colors px-1 -mx-1 py-0.5 group">
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="flex items-center gap-3">{inner}</div>;
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -189,6 +199,7 @@ export default async function DashboardPage() {
                 value={sevDist[sev] ?? 0}
                 max={maxSev}
                 colorClass={SEVERITY_COLORS[sev]}
+                href="/reports"
               />
             ))}
           </div>

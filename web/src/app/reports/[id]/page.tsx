@@ -4,9 +4,7 @@ import { notFound } from 'next/navigation';
 import { getReport } from '@/lib/api';
 import { format, parseISO } from 'date-fns';
 import type { Dimension, Finding, Severity } from '@/types';
-import FindingTable from '@/components/FindingTable';
 import SeverityBadge from '@/components/SeverityBadge';
-import SummaryMarkdown from '@/components/SummaryMarkdown';
 import ReportTabs from './ReportTabs';
 
 // ──────────────────────────────────────────────────────────
@@ -20,9 +18,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   try {
     const report = await getReport(params.id);
-    return {
-      title: `${report.repo_owner}/${report.repo_name} — Report`,
-    };
+    return { title: `${report.repo_owner}/${report.repo_name} — Report` };
   } catch {
     return { title: 'Report' };
   }
@@ -54,13 +50,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function SeverityCount({
-  severity,
-  count,
-}: {
-  severity: Severity;
-  count: number;
-}) {
+function SeverityCount({ severity, count }: { severity: Severity; count: number }) {
   if (count === 0) return null;
   return (
     <div className="flex items-center gap-1.5">
@@ -100,40 +90,32 @@ export default async function ReportDetailPage({
 
   // Count by severity
   const sevCounts = findings.reduce(
-    (acc, f) => {
-      acc[f.severity] = (acc[f.severity] ?? 0) + 1;
-      return acc;
-    },
+    (acc, f) => { acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc; },
     {} as Record<Severity, number>,
   );
 
   // Group by dimension
   const byDimension = findings.reduce(
-    (acc, f) => {
-      (acc[f.dimension] ??= []).push(f);
-      return acc;
-    },
+    (acc, f) => { (acc[f.dimension] ??= []).push(f); return acc; },
     {} as Record<Dimension, Finding[]>,
   );
 
-  // Build dimensions dynamically from findings
+  // Build dimension list
   const dimensionKeys = Array.from(new Set(findings.map((f) => f.dimension)));
-  // Keep known dimensions in standard order, append unknown ones
-  const KNOWN_ORDER: string[] = ['efficiency', 'security', 'cost', 'errors'];
+  const KNOWN_ORDER = ['efficiency', 'security', 'cost', 'errors'];
   const ordered = [
     ...KNOWN_ORDER.filter((k) => dimensionKeys.includes(k)),
     ...dimensionKeys.filter((k) => !KNOWN_ORDER.includes(k)),
   ];
-  // Ensure at least the known dimensions are shown even if no findings (for empty state)
   const dimensionsToShow = ordered.length > 0 ? ordered : KNOWN_ORDER;
-  const dimensions: { key: Dimension; label: string; count: number }[] = dimensionsToShow.map((key) => ({
+  const dimensions = dimensionsToShow.map((key) => ({
     key,
     label: key.charAt(0).toUpperCase() + key.slice(1),
     count: (byDimension[key] ?? []).length,
   }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Back link */}
       <Link
         href="/reports"
@@ -148,7 +130,6 @@ export default async function ReportDetailPage({
       {/* ── Header card ── */}
       <div className="card">
         <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-          {/* Title block */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-bold text-white truncate">
@@ -158,24 +139,14 @@ export default async function ReportDetailPage({
             </div>
             <p className="text-sm text-slate-400 mt-1">
               Analyzed {format(parseISO(created_at), "MMM d, yyyy 'at' HH:mm")}
-              {duration_ms != null && (
-                <> &middot; {formatDuration(duration_ms)}</>
-              )}
+              {duration_ms != null && <> &middot; {formatDuration(duration_ms)}</>}
             </p>
           </div>
-
-          {/* Severity counts */}
           <div className="flex items-center gap-4 flex-wrap">
             {(['critical', 'major', 'minor', 'info'] as Severity[]).map((sev) => (
-              <SeverityCount
-                key={sev}
-                severity={sev}
-                count={sevCounts[sev] ?? 0}
-              />
+              <SeverityCount key={sev} severity={sev} count={sevCounts[sev] ?? 0} />
             ))}
-            {findings.length === 0 && (
-              <span className="text-sm text-slate-500">No findings</span>
-            )}
+            {findings.length === 0 && <span className="text-sm text-slate-500">No findings</span>}
           </div>
         </div>
       </div>
@@ -197,34 +168,7 @@ export default async function ReportDetailPage({
         </div>
       )}
 
-      {/* ── Executive summary ── */}
-      {summary_md && (
-        <section aria-labelledby="summary-heading">
-          <div className="card">
-            <h2
-              id="summary-heading"
-              className="font-semibold text-slate-200 text-base mb-4"
-            >
-              Executive Summary
-            </h2>
-            <SummaryMarkdown source={summary_md} />
-          </div>
-        </section>
-      )}
-
-      {/* ── Dimension tabs ── */}
-      {findings.length > 0 && (
-        <section aria-labelledby="findings-heading">
-          <h2
-            id="findings-heading"
-            className="font-semibold text-slate-200 text-base mb-4"
-          >
-            Findings by Dimension
-          </h2>
-          <ReportTabs dimensions={dimensions} byDimension={byDimension} />
-        </section>
-      )}
-
+      {/* ── Success empty state ── */}
       {status === 'completed' && findings.length === 0 && !error_message && (
         <div className="card text-center py-12 text-slate-500">
           <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true" className="mx-auto mb-3 text-green-500">
@@ -233,6 +177,16 @@ export default async function ReportDetailPage({
           </svg>
           <p className="font-medium text-slate-300">No findings — your pipeline looks great!</p>
         </div>
+      )}
+
+      {/* ── Two-column: sidebar nav + summary + findings ── */}
+      {(findings.length > 0 || summary_md) && (
+        <ReportTabs
+          dimensions={dimensions}
+          byDimension={byDimension}
+          summaryMd={summary_md}
+          sevCounts={sevCounts}
+        />
       )}
     </div>
   );

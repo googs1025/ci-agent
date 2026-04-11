@@ -10,8 +10,21 @@ import type { AnalyzeFilters } from '@/types';
 type Phase =
   | { type: 'idle' }
   | { type: 'submitting' }
-  | { type: 'polling'; reportId: string; dots: number }
+  | { type: 'polling'; reportId: string; dots: number; startedAt: number; elapsedMs: number }
   | { type: 'error'; message: string };
+
+function getPhaseHint(elapsedMs: number): { label: string; sublabel: string } {
+  if (elapsedMs < 15_000) return { label: 'Cloning repository…', sublabel: 'Fetching source code from GitHub' };
+  if (elapsedMs < 45_000) return { label: 'Prefetching CI data…', sublabel: 'Loading workflow runs, jobs and logs' };
+  return { label: 'Analyzing with AI…', sublabel: 'Running skill agents on your pipeline' };
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return '0s';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
 
 function normalizeRepo(raw: string): string {
   // Accept:
@@ -54,14 +67,17 @@ export default function AnalyzePage() {
         filters,
         skills: selectedSkills.length > 0 ? selectedSkills : undefined,
       });
-      setPhase({ type: 'polling', reportId: report_id, dots: 0 });
+      const startedAt = Date.now();
+      setPhase({ type: 'polling', reportId: report_id, dots: 0, startedAt, elapsedMs: 0 });
 
-      // Animate dots independently
+      // Animate dots + update elapsed time
       let dots = 0;
       const dotsInterval = setInterval(() => {
         dots = (dots + 1) % 4;
         setPhase((prev) =>
-          prev.type === 'polling' ? { ...prev, dots } : prev,
+          prev.type === 'polling'
+            ? { ...prev, dots, elapsedMs: Date.now() - prev.startedAt }
+            : prev,
         );
       }, 500);
 
@@ -171,20 +187,22 @@ export default function AnalyzePage() {
             />
           </svg>
 
-          <div className="text-center space-y-1">
+          <div className="text-center space-y-1.5">
             {phase.type === 'submitting' && (
-              <p className="text-slate-200 font-medium">Starting analysis...</p>
+              <p className="text-slate-200 font-medium">Starting analysis…</p>
             )}
-            {phase.type === 'polling' && (
-              <>
-                <p className="text-slate-200 font-medium">
-                  Analysis in progress{'.'.repeat(phase.dots)}
-                </p>
-                <p className="text-slate-500 text-sm">
-                  Polling for results every 3 seconds
-                </p>
-              </>
-            )}
+            {phase.type === 'polling' && (() => {
+              const hint = getPhaseHint(phase.elapsedMs);
+              return (
+                <>
+                  <p className="text-slate-200 font-semibold">{hint.label}</p>
+                  <p className="text-slate-500 text-sm">{hint.sublabel}</p>
+                  <p className="text-slate-600 text-xs font-mono pt-1">
+                    {formatElapsed(phase.elapsedMs)} elapsed
+                  </p>
+                </>
+              );
+            })()}
           </div>
 
           <button
