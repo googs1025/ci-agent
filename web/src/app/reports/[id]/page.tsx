@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import type { Dimension, Finding, Severity } from '@/types';
 import FindingTable from '@/components/FindingTable';
 import SeverityBadge from '@/components/SeverityBadge';
+import SummaryMarkdown from '@/components/SummaryMarkdown';
 import ReportTabs from './ReportTabs';
 
 // ──────────────────────────────────────────────────────────
@@ -51,120 +52,6 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
-}
-
-/**
- * Lightweight markdown → HTML converter for the summary section.
- *
- * Key correctness properties:
- *  1. HTML-escapes all user content so things like `<FULL_LENGTH_COMMIT_SHA>`
- *     are NOT interpreted as HTML tags.
- *  2. Code blocks are extracted FIRST as placeholders so the line-wrapping
- *     logic does not insert <p> tags inside <pre><code> blocks (which would
- *     create massive vertical gaps).
- *  3. Tables (GitHub flavored) are converted to <table>.
- */
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function renderMarkdown(md: string): string {
-  // 1. Extract fenced code blocks first to protect them from later transforms.
-  const codeBlocks: string[] = [];
-  const CODE_PLACEHOLDER = (i: number) => `\u0000CODEBLOCK${i}\u0000`;
-  let working = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
-    const escaped = escapeHtml(code.replace(/\n$/, ''));
-    codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
-    return CODE_PLACEHOLDER(codeBlocks.length - 1);
-  });
-
-  // 2. Extract inline code (single backtick) similarly.
-  const inlineCodes: string[] = [];
-  const INLINE_PLACEHOLDER = (i: number) => `\u0000INLINE${i}\u0000`;
-  working = working.replace(/`([^`\n]+)`/g, (_m, code) => {
-    inlineCodes.push(`<code>${escapeHtml(code)}</code>`);
-    return INLINE_PLACEHOLDER(inlineCodes.length - 1);
-  });
-
-  // 3. HTML-escape everything else (placeholders contain only \u0000 + ASCII so they survive).
-  working = escapeHtml(working);
-
-  // 4. GitHub-flavored tables. Detect by looking for header line + separator line.
-  working = working.replace(
-    /(^\|.+\|\n\|[ \-:|]+\|\n(?:\|.*\|\n?)+)/gm,
-    (block) => {
-      const lines = block.trim().split('\n');
-      const header = lines[0];
-      const rows = lines.slice(2);
-      const headerCells = header.split('|').slice(1, -1).map((c) => c.trim());
-      const headerHtml =
-        '<thead><tr>' +
-        headerCells.map((c) => `<th>${c}</th>`).join('') +
-        '</tr></thead>';
-      const rowsHtml =
-        '<tbody>' +
-        rows
-          .map((row) => {
-            const cells = row.split('|').slice(1, -1).map((c) => c.trim());
-            return '<tr>' + cells.map((c) => `<td>${c}</td>`).join('') + '</tr>';
-          })
-          .join('') +
-        '</tbody>';
-      return `<table>${headerHtml}${rowsHtml}</table>`;
-    },
-  );
-
-  // 5. Headings.
-  working = working
-    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // 6. Bold and italic. Process bold first to avoid * confusion.
-  working = working
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
-
-  // 7. Horizontal rule.
-  working = working.replace(/^---$/gm, '<hr>');
-
-  // 8. List items.
-  working = working
-    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  // Wrap consecutive <li> blocks in <ul>.
-  working = working.replace(
-    /(?:<li>[\s\S]*?<\/li>\n?)+/g,
-    (match) => `<ul>${match}</ul>`,
-  );
-
-  // 9. Wrap remaining text lines in <p>. Skip:
-  //    - empty lines
-  //    - lines that start with a block-level tag (already handled)
-  //    - lines that start with a code-block placeholder
-  working = working
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return '';
-      if (trimmed.startsWith('<')) return line;
-      if (trimmed.startsWith('\u0000CODEBLOCK')) return line;
-      return `<p>${line}</p>`;
-    })
-    .join('\n');
-
-  // 10. Restore code block placeholders.
-  working = working.replace(/\u0000CODEBLOCK(\d+)\u0000/g, (_m, i) => codeBlocks[Number(i)]);
-  working = working.replace(/\u0000INLINE(\d+)\u0000/g, (_m, i) => inlineCodes[Number(i)]);
-
-  return working;
 }
 
 function SeverityCount({
@@ -320,10 +207,7 @@ export default async function ReportDetailPage({
             >
               Executive Summary
             </h2>
-            <div
-              className="prose-dark"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(summary_md) }}
-            />
+            <SummaryMarkdown source={summary_md} />
           </div>
         </section>
       )}
