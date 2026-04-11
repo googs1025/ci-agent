@@ -62,6 +62,15 @@ def parse_args():
     skills_show = skills_sub.add_parser("show", help="Show details of a specific skill")
     skills_show.add_argument("name", help="Skill name (e.g. security-analyst)")
 
+    skills_validate = skills_sub.add_parser(
+        "validate",
+        help="Validate a SKILL.md file or a directory containing SKILL.md files",
+    )
+    skills_validate.add_argument(
+        "path",
+        help="Path to a SKILL.md file or a directory containing one or more skill subdirs",
+    )
+
     return parser.parse_args()
 
 
@@ -229,8 +238,107 @@ def run_config(args):
         sys.exit(1)
 
 
+def _validate_skill_path(path: Path) -> int:
+    """Validate one or more SKILL.md files. Returns 0 on success, 1 on failure."""
+    from ci_optimizer.agents.skill_registry import (
+        SkillRegistry,
+        VALID_REQUIRES_DATA,
+    )
+
+    # Collect candidate SKILL.md files
+    candidates: list[Path] = []
+    if path.is_file() and path.name == "SKILL.md":
+        candidates.append(path)
+    elif path.is_dir():
+        # Could be a skill dir itself, or a parent of skill dirs
+        direct = path / "SKILL.md"
+        if direct.is_file():
+            candidates.append(direct)
+        else:
+            for sub in sorted(path.iterdir()):
+                if sub.is_dir():
+                    s = sub / "SKILL.md"
+                    if s.is_file():
+                        candidates.append(s)
+    else:
+        print(f"✗ Path not found or not a valid skill target: {path}", file=sys.stderr)
+        return 1
+
+    if not candidates:
+        print(f"✗ No SKILL.md files found under: {path}", file=sys.stderr)
+        return 1
+
+    # "did you mean" for unknown requires_data values
+    def _suggest(bad: str) -> str | None:
+        best: tuple[int, str] | None = None
+        for candidate in VALID_REQUIRES_DATA:
+            # simple character-level distance (Levenshtein-lite)
+            a, b = bad.lower(), candidate.lower()
+            if a == b:
+                return candidate
+            # common substring / prefix heuristic
+            score = sum(1 for c in a if c in b)
+            if best is None or score > best[0]:
+                best = (score, candidate)
+        if best and best[0] >= max(1, len(bad) // 2):
+            return best[1]
+        return None
+
+    total_errors = 0
+    for skill_file in candidates:
+        rel = skill_file.parent.name
+        try:
+            skill = SkillRegistry._parse_skill_md(skill_file, source="validate")
+        except Exception as e:
+            print(f"✗ {rel}/SKILL.md")
+            print(f"    parse error: {e}")
+            total_errors += 1
+            continue
+
+        errors = SkillRegistry._validate_skill(skill)
+        if errors:
+            print(f"✗ {rel}/SKILL.md")
+            for err in errors:
+                # Enhance requires_data errors with "did you mean"
+                if "unknown requires_data" in err:
+                    bad_set = err.split(": ", 1)[1].strip("{} ")
+                    enhanced_parts = []
+                    for bad in bad_set.replace("'", "").split(","):
+                        bad = bad.strip()
+                        if not bad:
+                            continue
+                        suggestion = _suggest(bad)
+                        if suggestion:
+                            enhanced_parts.append(f"'{bad}' (did you mean '{suggestion}'?)")
+                        else:
+                            enhanced_parts.append(f"'{bad}'")
+                    print(f"    ✗ unknown requires_data: {', '.join(enhanced_parts)}")
+                else:
+                    print(f"    ✗ {err}")
+            total_errors += len(errors)
+        else:
+            print(f"✓ {rel}/SKILL.md")
+            print(f"    name:          {skill.name}")
+            print(f"    dimension:     {skill.dimension}")
+            print(f"    requires_data: {', '.join(skill.requires_data)}")
+            print(f"    prompt body:   {len(skill.prompt)} chars")
+            print(f"    tools:         {', '.join(skill.tools)}")
+
+    print()
+    if total_errors == 0:
+        print(f"Validated {len(candidates)} skill{'s' if len(candidates) != 1 else ''} — all OK")
+        return 0
+    else:
+        print(f"Validated {len(candidates)} skill{'s' if len(candidates) != 1 else ''}, {total_errors} error{'s' if total_errors != 1 else ''}")
+        return 1
+
+
 def run_skills(args):
     from ci_optimizer.agents.skill_registry import SkillRegistry
+
+    if args.skills_action == "validate":
+        exit_code = _validate_skill_path(Path(args.path))
+        sys.exit(exit_code)
 
     registry = SkillRegistry().load()
 
@@ -265,7 +373,7 @@ def run_skills(args):
         print(f"Priority:      {skill.priority}")
 
     else:
-        print("Usage: ci-agent skills {list|show}")
+        print("Usage: ci-agent skills {list|show|validate}")
         sys.exit(1)
 
 
