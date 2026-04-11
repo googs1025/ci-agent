@@ -10,7 +10,7 @@ from ci_optimizer.agents.prompts import FINDING_JSON_FORMAT
 
 logger = logging.getLogger(__name__)
 
-VALID_REQUIRES_DATA = {"workflows", "runs", "jobs", "logs", "usage_stats"}
+VALID_REQUIRES_DATA = {"workflows", "runs", "jobs", "logs", "usage_stats", "action_shas"}
 
 # Default paths
 _BUILTIN_DIR = Path(__file__).resolve().parent.parent.parent.parent / "skills"

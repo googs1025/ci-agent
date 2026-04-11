@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ class AnalysisContext:
     logs_json_path: Path | None = None
     usage_stats_json_path: Path | None = None
     workflows_json_path: Path | None = None
+    action_shas_json_path: Path | None = None
     filters: AnalysisFilters | None = None
     repo_info: dict | None = None
 
@@ -50,6 +52,61 @@ def _write_temp_json(data: object, prefix: str) -> Path:
     with open(fd, "w") as f:
         json.dump(data, f, indent=2, default=str)
     return Path(path)
+
+
+# Matches `uses: owner/repo@ref` — skips refs that are already full 40-char SHAs
+_USES_RE = re.compile(r"uses:\s+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)@([^\s#]+)")
+_FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _extract_action_refs(workflow_files: list[Path]) -> dict[str, tuple[str, str, str]]:
+    """Return {action_ref: (owner, repo, ref)} for all non-SHA action pins found in workflows."""
+    refs: dict[str, tuple[str, str, str]] = {}
+    for wf in workflow_files:
+        try:
+            content = wf.read_text()
+        except OSError:
+            continue
+        for m in _USES_RE.finditer(content):
+            action, ref = m.group(1), m.group(2)
+            if _FULL_SHA_RE.match(ref):
+                continue  # already pinned — skip
+            # Skip docker:// and local paths
+            if "/" not in action or action.startswith("."):
+                continue
+            owner, repo = action.split("/", 1)
+            key = f"{action}@{ref}"
+            refs[key] = (owner, repo, ref)
+    return refs
+
+
+async def _resolve_action_shas(
+    refs: dict[str, tuple[str, str, str]],
+    client: GitHubClient,
+) -> dict[str, str]:
+    """Resolve each action ref to a full commit SHA. Returns {action@ref: sha}."""
+    results: dict[str, str] = {}
+
+    async def resolve_one(key: str, owner: str, repo: str, ref: str) -> None:
+        sha = await client.resolve_action_sha(owner, repo, ref)
+        if sha:
+            results[key] = sha
+            logger.debug(f"Resolved {key} → {sha[:12]}...")
+        else:
+            logger.debug(f"Could not resolve SHA for {key}")
+
+    # Batch with concurrency limit to avoid rate limiting
+    semaphore = asyncio.Semaphore(5)
+
+    async def limited(key: str, owner: str, repo: str, ref: str) -> None:
+        async with semaphore:
+            await resolve_one(key, owner, repo, ref)
+
+    await asyncio.gather(
+        *[limited(k, o, r, ref) for k, (o, r, ref) in refs.items()],
+        return_exceptions=True,
+    )
+    return results
 
 
 def _parse_dt(s: str | None) -> datetime | None:
@@ -363,6 +420,16 @@ async def prepare_context(
             workflows = await client.get_workflows(ctx.owner, ctx.repo)
             ctx.workflows_json_path = _write_temp_json(workflows, "workflows")
             ctx.repo_info = await client.get_repo_info(ctx.owner, ctx.repo)
+
+            # Resolve action SHAs when requested (e.g. by security skill)
+            need_action_shas = need_all or "action_shas" in (required_data or set())
+            if need_action_shas and ctx.workflow_files:
+                action_refs = _extract_action_refs(ctx.workflow_files)
+                if action_refs:
+                    logger.info(f"Resolving SHAs for {len(action_refs)} action ref(s)...")
+                    shas = await _resolve_action_shas(action_refs, client)
+                    ctx.action_shas_json_path = _write_temp_json(shas, "action-shas")
+                    logger.info(f"Resolved {len(shas)}/{len(action_refs)} action SHAs")
 
         finally:
             await client.close()

@@ -42,6 +42,8 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
         parts.append(f"Failure logs data: {ctx.logs_json_path}")
     if ctx.workflows_json_path:
         parts.append(f"Workflow definitions: {ctx.workflows_json_path}")
+    if ctx.action_shas_json_path:
+        parts.append(f"Resolved action SHAs (use these in suggested_code, not placeholders): {ctx.action_shas_json_path}")
 
     if ctx.owner and ctx.repo:
         parts.append(f"\nRepository: {ctx.owner}/{ctx.repo}")

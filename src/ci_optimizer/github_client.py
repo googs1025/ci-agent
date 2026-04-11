@@ -177,3 +177,23 @@ class GitHubClient:
     async def get_repo_info(self, owner: str, repo: str) -> dict:
         """Get repository metadata."""
         return await self._request("GET", f"/repos/{owner}/{repo}")
+
+    async def resolve_action_sha(self, owner: str, repo: str, ref: str) -> str | None:
+        """Resolve a tag/branch ref to its full commit SHA.
+
+        Tries tag ref first, then branch, returns None if not found.
+        """
+        for ref_path in [f"tags/{ref}", f"heads/{ref}"]:
+            try:
+                data = await self._request(
+                    "GET", f"/repos/{owner}/{repo}/git/ref/{ref_path}"
+                )
+                obj = data.get("object", {})
+                # Annotated tags point to a tag object — follow to the commit
+                if obj.get("type") == "tag":
+                    tag_data = await self._request("GET", f"/repos/{owner}/{repo}/git/tags/{obj['sha']}")
+                    return tag_data.get("object", {}).get("sha")
+                return obj.get("sha")
+            except Exception:
+                continue
+        return None

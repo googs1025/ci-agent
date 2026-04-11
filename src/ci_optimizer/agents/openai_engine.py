@@ -61,6 +61,12 @@ def _build_context_for_skill(ctx: AnalysisContext, requires: list[str]) -> str:
         except OSError:
             pass
 
+    if "action_shas" in requires and ctx.action_shas_json_path and ctx.action_shas_json_path.exists():
+        try:
+            parts.append(f"\n--- Resolved Action SHAs (use these in suggested_code) ---\n{ctx.action_shas_json_path.read_text()}")
+        except OSError:
+            pass
+
     return "\n".join(parts)
 
 
