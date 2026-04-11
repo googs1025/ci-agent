@@ -33,7 +33,7 @@ from ci_optimizer.db.crud import (
 from ci_optimizer.db.database import async_session
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.prefetch import prepare_context
-from ci_optimizer.report.formatter import format_json, format_markdown
+from ci_optimizer.report.formatter import format_json, format_summary_markdown
 from ci_optimizer.resolver import resolve_input
 
 router = APIRouter(prefix="/api")
@@ -103,7 +103,7 @@ async def _run_analysis_task(
             logger.info(f"[report={report_id}] Analysis done: {len(result.findings)} findings, {len(result.raw_report)} chars raw")
 
             lang = config.language if config else "en"
-            summary_md = format_markdown(result, ctx, language=lang)
+            summary_md = format_summary_markdown(result, ctx, language=lang)
             full_json = format_json(result, ctx, language=lang)
 
             await complete_report(

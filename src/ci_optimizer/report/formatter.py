@@ -73,10 +73,46 @@ def _get_i18n(language: str) -> dict:
     return I18N.get(language, I18N["en"])
 
 
+def format_summary_markdown(
+    result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
+) -> str:
+    """Format a concise executive summary for web display.
+
+    Only includes the top-level metadata and the LLM's executive_summary text.
+    The per-dimension findings are intentionally omitted — the web UI renders
+    them as interactive cards below this summary, so duplicating them here
+    makes the summary section excessively long.
+    """
+    t = _get_i18n(language)
+    repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    stats = result.stats or {}
+
+    lines = [
+        f"**{t['repository']}:** {repo_name}  ",
+        f"**{t['date']}:** {now}  ",
+        f"**{t['workflows']}:** {len(ctx.workflow_files)} files  ",
+        f"**{t['duration']}:** {result.duration_ms / 1000:.1f}s  ",
+        f"**{t['findings']}:** {stats.get('total_findings', 0)} "
+        f"({stats.get('critical', 0)} critical, "
+        f"{stats.get('major', 0)} major, "
+        f"{stats.get('minor', 0)} minor, "
+        f"{stats.get('info', 0)} info)",
+        "",
+    ]
+
+    if result.executive_summary:
+        lines.append(result.executive_summary.strip())
+    else:
+        lines.append(t["no_summary"])
+
+    return "\n".join(lines)
+
+
 def format_markdown(
     result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
 ) -> str:
-    """Format analysis result as a Markdown report."""
+    """Format analysis result as a full Markdown report (for CLI export)."""
     t = _get_i18n(language)
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
