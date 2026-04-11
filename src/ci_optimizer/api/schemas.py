@@ -1,7 +1,7 @@
 """Pydantic request/response schemas for the API."""
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class FilterSchema(BaseModel):
@@ -43,6 +43,27 @@ class FindingSchema(BaseModel):
     impact: str | None = None
     code_snippet: str | None = None
     suggested_code: str | None = None
+
+    @field_validator("line", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v):
+        """Accept empty strings / whitespace / the literal 'null' as None.
+
+        The LLM sometimes omits the line number or writes '' or 'null' in the
+        JSON payload; older DB rows have these values. Coerce to None so the
+        API does not fail with HTTP 500 when serving old reports.
+        """
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if s == "" or s.lower() == "null":
+                return None
+            try:
+                return int(s)
+            except ValueError:
+                return None
+        return v
 
 
 class ReportSummary(BaseModel):
