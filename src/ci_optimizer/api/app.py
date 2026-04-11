@@ -1,5 +1,6 @@
 """FastAPI application setup."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,23 @@ from ci_optimizer.api.routes import router
 from ci_optimizer.db.database import init_db
 
 load_dotenv()
+
+# Configure logging so background task output (from logger.info in
+# _run_analysis_task, engines, prefetch, etc.) is visible in the uvicorn
+# console. Uvicorn does not touch non-uvicorn loggers by default, so we
+# attach a stream handler to the ci_optimizer namespace.
+_LOG_LEVEL = os.getenv("CI_AGENT_LOG_LEVEL", "INFO").upper()
+_log_formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    datefmt="%H:%M:%S",
+)
+_ci_logger = logging.getLogger("ci_optimizer")
+if not any(isinstance(h, logging.StreamHandler) for h in _ci_logger.handlers):
+    _stream_handler = logging.StreamHandler()
+    _stream_handler.setFormatter(_log_formatter)
+    _ci_logger.addHandler(_stream_handler)
+_ci_logger.setLevel(_LOG_LEVEL)
+_ci_logger.propagate = False
 
 
 @asynccontextmanager
