@@ -50,6 +50,7 @@ class Finding(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     report_id: Mapped[int] = mapped_column(ForeignKey("analysis_reports.id"))
     dimension: Mapped[str]  # efficiency/security/cost/error
+    skill_name: Mapped[str | None]  # e.g. "security-analyst" — which skill produced this finding
     severity: Mapped[str]  # critical/major/minor/info
     title: Mapped[str]
     description: Mapped[str] = mapped_column(Text)

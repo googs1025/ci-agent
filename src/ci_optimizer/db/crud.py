@@ -59,6 +59,7 @@ async def complete_report(
         finding = Finding(
             report_id=report_id,
             dimension=f.get("dimension", "unknown"),
+            skill_name=f.get("skill_name"),
             severity=f.get("severity", "info"),
             title=f.get("title", "Untitled finding"),
             description=f.get("description", ""),

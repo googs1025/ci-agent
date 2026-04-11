@@ -181,6 +181,17 @@ export default function FindingTable({ findings }: FindingTableProps) {
                   >
                     <td colSpan={4} className="px-6 py-4">
                       <div className="space-y-3 text-sm">
+                        {finding.skill_name && (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                              Source Skill
+                            </p>
+                            <code className="text-xs text-accent-purple font-mono">
+                              {finding.skill_name}
+                            </code>
+                          </div>
+                        )}
+
                         {finding.description && (
                           <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">

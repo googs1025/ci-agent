@@ -192,14 +192,15 @@ async def _run_analysis_with_client(
         raw_report = _fallback_combine(specialist_results)
 
     # Log parse result
-    summary, findings, stats = _parse_result(raw_report)
+    dim_to_skill = {s.dimension: s.name for s in skills}
+    summary, findings, stats = _parse_result(raw_report, dim_to_skill)
     logger.info(f"Parsed: {len(findings)} findings, stats={stats}")
 
     if not findings:
         # If synthesis didn't produce findings, try fallback combine
         logger.warning("No findings from synthesis, trying fallback combine from specialist results")
         fallback = _fallback_combine(specialist_results)
-        fb_summary, fb_findings, fb_stats = _parse_result(fallback)
+        fb_summary, fb_findings, fb_stats = _parse_result(fallback, dim_to_skill)
         if fb_findings:
             summary = fb_summary if not summary else summary
             findings = fb_findings

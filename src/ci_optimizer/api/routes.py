@@ -240,6 +240,7 @@ async def get_report_detail(
             FindingSchema(
                 id=f.id,
                 dimension=f.dimension,
+                skill_name=f.skill_name,
                 severity=f.severity,
                 title=f.title,
                 description=f.description,

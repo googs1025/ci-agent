@@ -130,7 +130,8 @@ async def run_analysis_anthropic(
         raise RuntimeError("Agent returned empty analysis result")
 
     from ci_optimizer.agents.orchestrator import _parse_result
-    summary, findings, stats = _parse_result(result.raw_report)
+    dim_to_skill = {s.dimension: s.name for s in skills}
+    summary, findings, stats = _parse_result(result.raw_report, dim_to_skill)
     result.executive_summary = summary
     result.findings = findings
     result.stats = stats

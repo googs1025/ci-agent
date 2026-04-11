@@ -15,6 +15,7 @@ export type ReportStatus = 'pending' | 'running' | 'completed' | 'failed';
 export interface Finding {
   id: string;
   dimension: Dimension;
+  skill_name?: string | null;
   severity: Severity;
   title: string;
   description: string;

@@ -49,8 +49,17 @@ def _try_parse_json(raw_text: str) -> dict | None:
     return None
 
 
-def _parse_result(raw_text: str) -> tuple[str, list[dict], dict]:
-    """Parse the orchestrator's output into structured data."""
+def _parse_result(
+    raw_text: str,
+    dimension_to_skill: dict[str, str] | None = None,
+) -> tuple[str, list[dict], dict]:
+    """Parse the orchestrator's output into structured data.
+
+    dimension_to_skill: optional mapping from dimension name to skill name,
+    used to tag each finding with the skill that produced it. Callers can
+    build this from the active skills list.
+    """
+    dim_map = dimension_to_skill or {}
     try:
         data = _try_parse_json(raw_text)
         if data:
@@ -64,6 +73,9 @@ def _parse_result(raw_text: str) -> tuple[str, list[dict], dict]:
             for dim_name, dim_data in dimensions.items():
                 for f in dim_data.get("findings", []):
                     f.setdefault("dimension", dim_name)
+                    # Tag the finding with the skill that produced it
+                    if "skill_name" not in f and dim_name in dim_map:
+                        f["skill_name"] = dim_map[dim_name]
                     findings.append(f)
 
             stats = data.get("stats", {})

@@ -34,6 +34,7 @@ class AnalyzeRequest(BaseModel):
 class FindingSchema(BaseModel):
     id: int
     dimension: str
+    skill_name: str | None = None  # which skill produced this finding
     severity: str
     title: str
     description: str
