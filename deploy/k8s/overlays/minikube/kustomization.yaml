@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ci-agent
+
+resources:
+  - ../../  # base manifests
+
+# Use local images built inside minikube (no registry needed)
+images:
+  - name: ci-agent-backend:v0.1.0
+    newName: ci-agent-backend
+    newTag: v0.1.0
+  - name: ci-agent-frontend:v0.1.0
+    newName: ci-agent-frontend
+    newTag: v0.1.0
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+    target:
+      kind: Deployment
+      name: ci-agent-backend
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+    target:
+      kind: Deployment
+      name: ci-agent-frontend
