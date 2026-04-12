@@ -3,7 +3,7 @@
 import textwrap
 from pathlib import Path
 
-from ci_optimizer.agents.skill_registry import SkillRegistry, _BUILTIN_DIR
+from ci_optimizer.agents.skill_registry import _BUILTIN_DIR, SkillRegistry
 
 
 class TestSkillSystemIntegration:

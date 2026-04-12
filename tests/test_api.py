@@ -2,12 +2,10 @@
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ci_optimizer.api.app import app
 from ci_optimizer.api.routes import get_db
-from ci_optimizer.db.models import Base
-from ci_optimizer.db.crud import get_or_create_repo, create_report, complete_report
+from ci_optimizer.db.crud import complete_report, create_report, get_or_create_repo
 
 
 @pytest.fixture

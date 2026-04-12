@@ -1,8 +1,8 @@
 """GitHub REST API client for fetching CI run data."""
 
+import asyncio
 import io
 import os
-import asyncio
 import zipfile
 from datetime import datetime, timezone
 

@@ -1,14 +1,13 @@
 """Tests for report formatter."""
 
 import json
-from pathlib import Path
 
 import pytest
 
 from ci_optimizer.agents.orchestrator import AnalysisResult
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.prefetch import AnalysisContext
-from ci_optimizer.report.formatter import format_markdown, format_json
+from ci_optimizer.report.formatter import format_json, format_markdown
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@
 
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".ci-agent"

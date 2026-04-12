@@ -4,27 +4,22 @@ These tests mock the Claude Agent SDK (no real API calls) but exercise
 the entire flow: resolver → prefetch → orchestrator → formatter → API.
 """
 
-import asyncio
 import json
-import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from ci_optimizer.agents.orchestrator import AnalysisResult, run_analysis, _parse_result
+from ci_optimizer.agents.orchestrator import AnalysisResult, _parse_result
 from ci_optimizer.api.app import app
 from ci_optimizer.api.routes import get_db
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.db.models import Base
-from ci_optimizer.filters import AnalysisFilters
-from ci_optimizer.prefetch import prepare_context, AnalysisContext
-from ci_optimizer.report.formatter import format_markdown, format_json
-from ci_optimizer.resolver import resolve_input, ResolvedInput
-
+from ci_optimizer.prefetch import prepare_context
+from ci_optimizer.report.formatter import format_json, format_markdown
+from ci_optimizer.resolver import ResolvedInput, resolve_input
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -473,7 +468,9 @@ class TestAPIFlow:
     async def test_analyze_and_retrieve_report(self, e2e_repo, e2e_db, e2e_client):
         """Full flow: create repo+report in DB → complete it → query all endpoints."""
         from ci_optimizer.db.crud import (
-            get_or_create_repo, create_report, complete_report,
+            complete_report,
+            create_report,
+            get_or_create_repo,
         )
 
         # Simulate what the API analyze flow does, but directly in the test DB

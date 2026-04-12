@@ -46,7 +46,7 @@ def parse_args():
     config_cmd = subparsers.add_parser("config", help="View or update configuration")
     config_sub = config_cmd.add_subparsers(dest="config_action")
 
-    config_show = config_sub.add_parser("show", help="Show current configuration")
+    config_sub.add_parser("show", help="Show current configuration")
 
     config_set = config_sub.add_parser("set", help="Set a configuration value")
     config_set.add_argument("key", help="Config key (model, fallback_model, anthropic_api_key, github_token, max_turns)")
@@ -152,12 +152,11 @@ def _build_config(args) -> "AgentConfig":
 
 
 async def run_analyze(args):
-    from ci_optimizer.config import AgentConfig
-    from ci_optimizer.filters import AnalysisFilters
-    from ci_optimizer.resolver import resolve_input
-    from ci_optimizer.prefetch import prepare_context
     from ci_optimizer.agents.orchestrator import run_analysis
-    from ci_optimizer.report.formatter import format_markdown, format_json
+    from ci_optimizer.filters import AnalysisFilters
+    from ci_optimizer.prefetch import prepare_context
+    from ci_optimizer.report.formatter import format_json, format_markdown
+    from ci_optimizer.resolver import resolve_input
 
     config = _build_config(args)
 
@@ -261,7 +260,7 @@ def run_serve(args):
 
 
 def run_config(args):
-    from ci_optimizer.config import AgentConfig, CONFIG_FILE
+    from ci_optimizer.config import CONFIG_FILE, AgentConfig
 
     if args.config_action == "show":
         config = AgentConfig.load()
@@ -274,7 +273,7 @@ def run_config(args):
 
         if not hasattr(config, key):
             print(f"Error: Unknown config key '{key}'", file=sys.stderr)
-            print(f"Available keys: model, fallback_model, anthropic_api_key, github_token, max_turns", file=sys.stderr)
+            print("Available keys: model, fallback_model, anthropic_api_key, github_token, max_turns", file=sys.stderr)
             sys.exit(1)
 
         # Type conversion
@@ -297,8 +296,8 @@ def run_config(args):
 def _validate_skill_path(path: Path) -> int:
     """Validate one or more SKILL.md files. Returns 0 on success, 1 on failure."""
     from ci_optimizer.agents.skill_registry import (
-        SkillRegistry,
         VALID_REQUIRES_DATA,
+        SkillRegistry,
     )
 
     # Collect candidate SKILL.md files
@@ -426,7 +425,7 @@ def _run_skills_import(args):
     print()
     print("⚠  Imported skill prompts are sent to the LLM. Only import skills")
     print("   from sources you trust. Run 'ci-agent skills show {name}' to review.")
-    print(f"\nTip: Restart the API server or run 'ci-agent skills reload' to activate.")
+    print("\nTip: Restart the API server or run 'ci-agent skills reload' to activate.")
 
 
 def _run_skills_install(args):

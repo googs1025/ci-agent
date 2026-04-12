@@ -3,10 +3,7 @@
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from ci_optimizer.agents.skill_registry import (
-    Skill,
     SkillRegistry,
     get_registry,
     reset_registry,

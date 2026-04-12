@@ -1,9 +1,8 @@
 """CRUD operations for CI Agent database."""
 
-import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 

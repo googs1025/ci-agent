@@ -1,7 +1,6 @@
 """Orchestrator — routes analysis to the configured engine (Anthropic or OpenAI)."""
 
 import json
-import time
 from dataclasses import dataclass, field
 
 from ci_optimizer.config import AgentConfig

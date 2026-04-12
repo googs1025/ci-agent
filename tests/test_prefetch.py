@@ -1,19 +1,17 @@
 """Tests for prefetch module."""
 
 import json
-from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.prefetch import (
-    prepare_context,
-    _write_temp_json,
     _compute_usage_stats,
-    _duration_ms,
     _detect_runner_os,
-    AnalysisContext,
+    _duration_ms,
+    _write_temp_json,
+    prepare_context,
 )
 from ci_optimizer.resolver import ResolvedInput
 

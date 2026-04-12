@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from ci_optimizer.agents.orchestrator import AnalysisResult
 from ci_optimizer.prefetch import AnalysisContext
 
-
 SEVERITY_ICONS = {
     "critical": "🔴",
     "major": "🟠",
@@ -119,7 +118,7 @@ def format_markdown(
 
     lines = [
         f"# {t['title']}",
-        f"",
+        "",
         f"**{t['repository']}:** {repo_name}",
         f"**{t['date']}:** {now}",
         f"**{t['workflows']}:** {len(ctx.workflow_files)} files",

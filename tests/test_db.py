@@ -3,14 +3,14 @@
 import pytest
 
 from ci_optimizer.db.crud import (
-    get_or_create_repo,
-    create_report,
     complete_report,
+    create_report,
     fail_report,
+    get_dashboard_stats,
+    get_or_create_repo,
     get_report,
     list_reports,
     list_repositories,
-    get_dashboard_stats,
 )
 
 
@@ -106,6 +106,7 @@ class TestCompleteReport:
 
         # Refresh repo
         from sqlalchemy import select
+
         from ci_optimizer.db.models import Repository
         result = await db_session.execute(
             select(Repository).where(Repository.id == repo.id)

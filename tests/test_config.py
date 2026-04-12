@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ci_optimizer.config import AgentConfig, DEFAULT_MODEL
+from ci_optimizer.config import DEFAULT_MODEL, AgentConfig
 
 
 class TestAgentConfig:
@@ -130,6 +130,7 @@ class TestAgentConfigApi:
 @pytest.fixture
 async def client(db_session):
     from httpx import ASGITransport, AsyncClient
+
     from ci_optimizer.api.app import app
     from ci_optimizer.api.routes import get_db
 

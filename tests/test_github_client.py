@@ -1,6 +1,5 @@
 """Tests for GitHub client with mocked HTTP responses."""
 
-import json
 
 import httpx
 import pytest

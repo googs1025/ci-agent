@@ -1,6 +1,5 @@
 """SQLAlchemy ORM models for CI Agent."""
 
-import json
 from datetime import datetime, timezone
 
 import sqlalchemy

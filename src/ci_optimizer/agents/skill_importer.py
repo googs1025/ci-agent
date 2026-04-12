@@ -28,10 +28,9 @@ from pathlib import Path
 import yaml
 
 from ci_optimizer.agents.skill_registry import (
-    VALID_REQUIRES_DATA,
-    Skill,
-    SkillRegistry,
     _USER_DIR,
+    VALID_REQUIRES_DATA,
+    SkillRegistry,
 )
 
 logger = logging.getLogger(__name__)

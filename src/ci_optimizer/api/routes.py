@@ -1,24 +1,22 @@
 """FastAPI route handlers."""
 
-import asyncio
 import json
-import traceback
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
 from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
-    SkillImportRequest,
-    SkillImportResponse,
     AgentConfigSchema,
     AnalyzeRequest,
     DashboardResponse,
+    FindingSchema,
     ReportDetail,
     ReportListResponse,
     ReportSummary,
     RepositorySchema,
-    FindingSchema,
+    SkillImportRequest,
+    SkillImportResponse,
     SkillSchema,
 )
 from ci_optimizer.config import AgentConfig
@@ -145,7 +143,7 @@ async def analyze(
 ):
     """Trigger a new CI pipeline analysis."""
     # Extract owner/repo without cloning (clone deferred to background task)
-    from ci_optimizer.resolver import is_github_url, is_github_shorthand, parse_github_url, GITHUB_SHORTHAND_PATTERN
+    from ci_optimizer.resolver import GITHUB_SHORTHAND_PATTERN, is_github_shorthand, is_github_url, parse_github_url
 
     repo_input = request.repo
     if is_github_url(repo_input):
