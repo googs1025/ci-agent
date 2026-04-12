@@ -186,11 +186,126 @@ kubectl -n ci-agent get pods -w
 # 查看后端日志（应看到 "Skill registry loaded"）
 kubectl -n ci-agent logs -f deployment/ci-agent-backend
 
-# 本地测试 API
+# 测试 Backend API
 kubectl -n ci-agent port-forward svc/ci-agent-backend 8000:8000
 curl http://localhost:8000/health        # → {"status":"ok"}
-curl http://localhost:8000/api/dashboard
+curl http://localhost:8000/api/skills    # → 4 built-in skills
 ```
+
+### 步骤五：访问前端
+
+**方式一：通过 Ingress（正式域名，推荐生产）**
+
+确保域名已解析到 Ingress Controller 的外部 IP，直接浏览器访问：
+```
+https://ci-agent.your-domain.com
+```
+
+**方式二：port-forward（测试 / 本地环境）**
+
+```bash
+kubectl -n ci-agent port-forward svc/ci-agent-frontend 3001:3000
+```
+浏览器打开 → http://localhost:3001
+
+> `/api/*` 请求会自动由 Next.js rewrite 代理到 backend，无需额外配置。
+
+---
+
+## 方案三：Minikube（本地 K8s 测试）
+
+适合在本地验证 K8s 部署行为，无需外部镜像仓库。
+
+### 前置条件
+
+```bash
+# 安装 minikube
+brew install minikube
+
+# 启动集群
+minikube start
+
+# 启用 nginx ingress
+minikube addons enable ingress
+```
+
+### 构建镜像到 minikube 内部
+
+```bash
+# 切换到 minikube 的 Docker 环境（关键步骤）
+eval $(minikube docker-env)
+
+# 构建镜像（直接进入 minikube，不需要推送）
+docker build -f Dockerfile.backend -t ci-agent-backend:v0.1.0 .
+
+docker build -f Dockerfile.frontend \
+  --build-arg NEXT_PUBLIC_API_URL=http://ci-agent-backend:8000 \
+  -t ci-agent-frontend:v0.1.0 .
+```
+
+### 部署
+
+```bash
+# 部署基础资源
+kubectl apply -k deploy/k8s/
+
+# 改为使用本地镜像（不从仓库拉取）
+kubectl -n ci-agent patch deployment ci-agent-backend \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"backend","imagePullPolicy":"Never"}]}}}}'
+kubectl -n ci-agent patch deployment ci-agent-frontend \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"frontend","imagePullPolicy":"Never"}]}}}}'
+
+# 注入 API Key
+kubectl -n ci-agent create secret generic ci-agent-secrets \
+  --from-literal=ANTHROPIC_API_KEY="sk-ant-your-key" \
+  --from-literal=GITHUB_TOKEN="ghp_your-token" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 更新 provider 配置并重启
+kubectl -n ci-agent patch configmap ci-agent-config \
+  -p '{"data":{"CI_AGENT_PROVIDER":"anthropic","CORS_ORIGINS":"http://localhost:3001"}}'
+kubectl -n ci-agent rollout restart deployment/ci-agent-backend
+```
+
+### 访问前端
+
+**macOS / Docker driver 限制**：minikube IP 在容器网络内，浏览器无法直接访问，使用 port-forward：
+
+```bash
+kubectl -n ci-agent port-forward svc/ci-agent-frontend 3001:3000
+```
+
+浏览器打开 → **http://localhost:3001**
+
+### 验证
+
+```bash
+# 查看所有 Pod
+kubectl -n ci-agent get pods
+
+# 预期输出：
+# ci-agent-backend-xxx   1/1   Running
+# ci-agent-frontend-xxx  1/1   Running  (2 replicas)
+
+# 测试 backend
+kubectl -n ci-agent port-forward svc/ci-agent-backend 8001:8000 &
+curl http://localhost:8001/health       # → {"status":"ok"}
+curl http://localhost:8001/api/skills   # → 4 skills
+
+# 测试 frontend proxy（port-forward 状态下）
+curl http://localhost:3001/api/skills   # → 4 skills（经 Next.js rewrite 代理）
+```
+
+### 清理
+
+```bash
+kubectl delete -k deploy/k8s/
+
+# 恢复本地 Docker 环境
+eval $(minikube docker-env -u)
+```
+
+---
 
 ### 更新镜像版本
 
