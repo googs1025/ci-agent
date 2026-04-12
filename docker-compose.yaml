@@ -28,6 +28,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        # Baked into Next.js rewrites at build time; matches the backend service name
+        NEXT_PUBLIC_API_URL: http://backend:8000
     ports:
       - "3000:3000"
     environment:

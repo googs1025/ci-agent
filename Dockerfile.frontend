@@ -8,6 +8,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY web/ ./
 ENV NEXT_TELEMETRY_DISABLED=1
+# Backend URL is baked at build time into Next.js rewrites (next.config.js)
+# Override via docker-compose build args or --build-arg for non-localhost targets
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM node:20-alpine AS runner
