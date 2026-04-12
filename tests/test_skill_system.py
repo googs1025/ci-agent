@@ -73,7 +73,7 @@ class TestSkillSystemIntegration:
 
         assert len(skills) == 1
         required = registry.collect_required_data(skills)
-        assert required == {"workflows"}
+        assert required == {"workflows", "action_shas"}
 
     def test_skill_to_agent_definition(self):
         """Skill.to_agent_definition produces valid AgentDefinition."""
