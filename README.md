@@ -2,6 +2,8 @@
 
 AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude) 和 OpenAI 双引擎。
 
+**快速上手** → [使用指南](docs/guides/usage-guide.md) | **完整文档** → [docs/](docs/README.md)
+
 ## Features
 
 - **四维度分析**: 执行效率、安全最佳实践、成本优化、错误模式分析
@@ -164,7 +166,7 @@ docker compose up -d
 # Backend:  http://localhost:8000
 ```
 
-详细部署文档见 [docs/deployment.md](docs/deployment.md)
+详细部署文档见 [docs/operations/deployment.md](docs/operations/deployment.md)
 
 ## Tech Stack
 
@@ -176,9 +178,20 @@ docker compose up -d
 | Frontend | Next.js 14, Tailwind CSS, TypeScript |
 | Infra | Docker, Kubernetes, GitHub API |
 
-## Docs
+## Documentation
 
-- [架构设计](docs/design.md)
-- [K8s 部署](docs/deployment.md)
-- [产品 Roadmap](docs/roadmap.md)
-- [Webhook 设计](docs/webhook-design.md)
+> 完整文档索引见 [docs/README.md](docs/README.md)
+
+### 用户指南
+- [使用指南](docs/guides/usage-guide.md) — Dashboard、分析、报告、技能管理，含界面截图
+
+### 架构设计
+- [系统架构](docs/design/architecture.md) — 整体架构与模块设计
+- [Skill 系统设计](docs/design/skill-system.md) — 声明式技能定义与扩展机制
+- [Webhook 设计](docs/design/webhook.md) — 实时 CI 用量追踪方案（草案）
+
+### 运维部署
+- [部署文档](docs/operations/deployment.md) — Docker / Kubernetes 部署
+
+### 产品规划
+- [Roadmap](docs/roadmap.md) — 产品路线图
