@@ -1,19 +1,33 @@
-FROM python:3.12-slim AS base
+FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
+# Non-root user
+RUN groupadd --gid 1001 ciagent && \
+    useradd --uid 1001 --gid ciagent --shell /bin/bash --no-create-home ciagent
+
 WORKDIR /app
 
+# Install dependencies first (cached layer unless pyproject.toml changes)
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e . 2>/dev/null || pip install --no-cache-dir .
 
+# Copy application source and built-in skills
 COPY src/ ./src/
+COPY skills/ ./skills/
 
-RUN mkdir -p /data/.ci-agent
+# Persistent data dir
+RUN mkdir -p /data/.ci-agent && chown -R ciagent:ciagent /data /app
+
+USER ciagent
 
 ENV PYTHONUNBUFFERED=1
+ENV HOME=/data
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
 CMD ["uvicorn", "ci_optimizer.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

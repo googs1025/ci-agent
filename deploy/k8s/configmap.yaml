@@ -7,4 +7,6 @@ metadata:
     app.kubernetes.io/part-of: ci-agent
 data:
   CI_AGENT_MODEL: "claude-sonnet-4-20250514"
-  CORS_ORIGINS: "http://localhost:3000"           # Update to your frontend domain
+  CI_AGENT_PROVIDER: "anthropic"
+  CI_AGENT_LANGUAGE: "en"
+  CORS_ORIGINS: "https://ci-agent.example.com"    # REQUIRED: update to your domain

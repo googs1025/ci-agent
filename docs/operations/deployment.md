@@ -12,7 +12,7 @@
                 │         │  │    Frontend      │  │     Backend       │  │
              /api/* ──────┼──┤  Next.js :3000   │  │  FastAPI :8000    │  │
                 │         │  │  (2 replicas)    │  │  (1 replica*)     │  │
-              /* ─────────┼──┤  Static + SSR    │  │  Agent Engine     │  │
+              /* ─────────┼──┤  SSR + rewrites  │  │  Agent Engine     │  │
                           │  │                  │  │  REST API         │  │
                           │  └─────────────────┘  └──────┬────────────┘  │
                           │                              │               │
@@ -21,103 +21,125 @@
                           │                     │ ├─ data.db        │    │
                           │                     │ └─ config.json    │    │
                           │                     └───────────────────┘    │
-                          │                              │               │
-                          └──────────────────────────────┼───────────────┘
+                          └──────────────────────────────────────────────┘
                                                          │
                                               External APIs
                                         ┌────────────────┼────────────┐
                                         │                │            │
                                    Anthropic API    GitHub API    Git Clone
-                                  (Claude Agent)   (Run History)  (Repo Files)
 ```
 
-*Backend 限制 1 replica，因为使用 SQLite（不支持多写并发）。如需多副本，需替换为 PostgreSQL。
-
-## 组件说明
-
-| 组件 | 镜像 | 端口 | 副本 | 存储 |
-|------|------|------|------|------|
-| Backend (FastAPI) | `ci-agent-backend` | 8000 | 1 | PVC: SQLite + Config |
-| Frontend (Next.js) | `ci-agent-frontend` | 3000 | 2 | 无状态 |
-| Ingress (nginx) | - | 80/443 | - | - |
-
-## 前置条件
-
-- Kubernetes 1.24+
-- kubectl 配置好 kubeconfig
-- 容器镜像仓库（Docker Hub / Harbor / ACR 等）
-- Ingress Controller（nginx-ingress 推荐）
-- Anthropic API Key
+*Backend 限制 1 replica，SQLite 不支持多写并发。如需多副本，替换为 PostgreSQL。
 
 ---
 
-## 1. Docker 本地测试
+## 方案一：Docker Compose（本地/单机）
 
-### 构建镜像
+最简单的部署方式，适合本地体验和单机生产。
+
+### 步骤
 
 ```bash
-# 构建后端
-docker build -f Dockerfile.backend -t ci-agent-backend:latest .
+# 1. 克隆项目
+git clone https://github.com/googs1025/ci-agent.git
+cd ci-agent
 
-# 构建前端
-docker build -f Dockerfile.frontend -t ci-agent-frontend:latest .
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，至少填入：
+#   ANTHROPIC_API_KEY=sk-ant-...   (或 OPENAI_API_KEY)
+#   GITHUB_TOKEN=ghp_...
+
+# 3. 构建并启动（首次约 3-5 分钟）
+docker compose up -d --build
+
+# 4. 查看启动状态（等待 backend healthy）
+docker compose ps
+
+# 5. 查看日志
+docker compose logs -f backend
 ```
 
-### Docker Compose 启动
+**访问地址：**
+- Web UI：http://localhost:3000
+- API 文档：http://localhost:8000/docs
+- 健康检查：http://localhost:8000/health
+
+### 常用命令
 
 ```bash
-# 配置 .env
-cp .env.example .env
-# 编辑 .env 填入 ANTHROPIC_API_KEY 和 GITHUB_TOKEN
+# 停止
+docker compose down
 
-# 启动
-docker compose up -d
+# 停止并删除数据（慎用）
+docker compose down -v
 
-# 查看日志
+# 更新代码后重新构建
+docker compose up -d --build
+
+# 查看实时日志
 docker compose logs -f
 
-# 访问
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000/docs
+# 进入 backend 容器调试
+docker compose exec backend bash
+```
+
+### 数据持久化
+
+分析数据存储在 Docker volume `ci-agent-data` 中：
+```bash
+# 查看 volume 位置
+docker volume inspect ci-agent_ci-agent-data
+
+# 备份数据库
+docker compose exec backend sqlite3 /data/.ci-agent/data.db .dump > backup.sql
 ```
 
 ---
 
-## 2. Kubernetes 部署
+## 方案二：Kubernetes（生产）
 
-### 2.1 推送镜像到仓库
+### 前置条件
+
+- Kubernetes 1.24+
+- `kubectl` 已配置 kubeconfig
+- 容器镜像仓库（Docker Hub / Harbor / ACR 等）
+- Ingress Controller（推荐 nginx-ingress）
+
+### 步骤一：构建并推送镜像
 
 ```bash
-# 替换 REGISTRY 为你的镜像仓库地址
+# 替换为你的镜像仓库地址
 REGISTRY=your-registry.com/ci-agent
+VERSION=v0.1.0
 
-docker build -f Dockerfile.backend -t $REGISTRY/backend:v0.1.0 .
-docker build -f Dockerfile.frontend -t $REGISTRY/frontend:v0.1.0 .
+docker build -f Dockerfile.backend -t $REGISTRY/backend:$VERSION .
+docker build -f Dockerfile.frontend -t $REGISTRY/frontend:$VERSION .
 
-docker push $REGISTRY/backend:v0.1.0
-docker push $REGISTRY/frontend:v0.1.0
+docker push $REGISTRY/backend:$VERSION
+docker push $REGISTRY/frontend:$VERSION
 ```
 
-### 2.2 修改配置
+### 步骤二：修改配置文件
 
-部署前需修改以下文件：
-
-**`deploy/k8s/secret.yaml`** — 填入真实的 API Key：
+**`deploy/k8s/secret.yaml`** — 填入真实密钥：
 
 ```yaml
 stringData:
-  ANTHROPIC_API_KEY: "sk-ant-your-real-key"
-  GITHUB_TOKEN: "ghp_your-real-token"
+  ANTHROPIC_API_KEY: "sk-ant-your-real-key"   # 必填
+  GITHUB_TOKEN: "ghp_your-real-token"          # 推荐
 ```
 
-> 生产环境建议使用 External Secrets Operator 或 Sealed Secrets 管理敏感信息。
+> 生产环境建议改用 [External Secrets Operator](https://external-secrets.io/) 或 [Sealed Secrets](https://sealed-secrets.netlify.app/)。
 
-**`deploy/k8s/configmap.yaml`** — 按需调整模型和 CORS：
+**`deploy/k8s/configmap.yaml`** — 修改域名和模型：
 
 ```yaml
 data:
   CI_AGENT_MODEL: "claude-sonnet-4-20250514"
-  CORS_ORIGINS: "https://ci-agent.example.com"
+  CI_AGENT_PROVIDER: "anthropic"
+  CI_AGENT_LANGUAGE: "en"
+  CORS_ORIGINS: "https://ci-agent.your-domain.com"   # 必填，改为你的域名
 ```
 
 **`deploy/k8s/backend.yaml` / `frontend.yaml`** — 替换镜像地址：
@@ -134,10 +156,10 @@ rules:
   - host: ci-agent.your-domain.com
 ```
 
-### 2.3 部署
+### 步骤三：部署
 
 ```bash
-# 方式一：使用 kustomize
+# 方式一：kustomize（推荐）
 kubectl apply -k deploy/k8s/
 
 # 方式二：逐个 apply
@@ -150,118 +172,117 @@ kubectl apply -f deploy/k8s/frontend.yaml
 kubectl apply -f deploy/k8s/ingress.yaml
 ```
 
-### 2.4 验证
+### 步骤四：验证
 
 ```bash
-# 查看 Pod 状态
-kubectl -n ci-agent get pods
+# 查看 Pod 状态（等待 Running）
+kubectl -n ci-agent get pods -w
 
-# 查看日志
+# 查看后端日志（应看到 "Skill registry loaded"）
 kubectl -n ci-agent logs -f deployment/ci-agent-backend
-kubectl -n ci-agent logs -f deployment/ci-agent-frontend
 
-# 测试 API
+# 本地测试 API
 kubectl -n ci-agent port-forward svc/ci-agent-backend 8000:8000
-curl http://localhost:8000/api/config
+curl http://localhost:8000/health        # → {"status":"ok"}
 curl http://localhost:8000/api/dashboard
 ```
 
----
-
-## 3. 配置管理
-
-### 环境变量
-
-| 变量 | 所属组件 | 说明 | 必填 |
-|------|---------|------|------|
-| `ANTHROPIC_API_KEY` | Backend | Claude API Key | Yes |
-| `GITHUB_TOKEN` | Backend | GitHub Token（获取 CI 运行历史） | Recommended |
-| `CI_AGENT_MODEL` | Backend | 使用的模型 | No (default: claude-sonnet-4-20250514) |
-| `CORS_ORIGINS` | Backend | 允许的前端域名（逗号分隔） | No (default: http://localhost:3000) |
-| `NEXT_PUBLIC_API_URL` | Frontend | 后端 API 地址 | No (K8s 内部: http://ci-agent-backend:8000) |
-
-### 运行时配置
-
-部署后可通过 API 动态修改配置（无需重启）：
+### 更新镜像版本
 
 ```bash
-# 切换模型
-curl -X PUT https://ci-agent.example.com/api/config \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-opus-4-20250514"}'
+REGISTRY=your-registry.com/ci-agent
 
-# 查看当前配置
-curl https://ci-agent.example.com/api/config
+# 重新构建推送
+docker build -f Dockerfile.backend -t $REGISTRY/backend:v0.2.0 . && docker push $REGISTRY/backend:v0.2.0
+docker build -f Dockerfile.frontend -t $REGISTRY/frontend:v0.2.0 . && docker push $REGISTRY/frontend:v0.2.0
+
+# 滚动更新（frontend 支持滚动，backend 会 Recreate）
+kubectl -n ci-agent set image deploy/ci-agent-backend backend=$REGISTRY/backend:v0.2.0
+kubectl -n ci-agent set image deploy/ci-agent-frontend frontend=$REGISTRY/frontend:v0.2.0
+
+# 等待更新完成
+kubectl -n ci-agent rollout status deploy/ci-agent-backend
+kubectl -n ci-agent rollout status deploy/ci-agent-frontend
+```
+
+### 常用运维命令
+
+```bash
+# 查看所有资源
+kubectl -n ci-agent get all
+
+# 重启 backend（配置变更后）
+kubectl -n ci-agent rollout restart deploy/ci-agent-backend
+
+# 更新 ConfigMap 后重启
+kubectl -n ci-agent edit configmap ci-agent-config
+kubectl -n ci-agent rollout restart deploy/ci-agent-backend
+
+# 更新 Secret 后重启
+kubectl -n ci-agent edit secret ci-agent-secrets
+kubectl -n ci-agent rollout restart deploy/ci-agent-backend
+
+# 查看事件（排查 Pod 异常）
+kubectl -n ci-agent describe pod <pod-name>
+kubectl -n ci-agent get events --sort-by=.lastTimestamp
+
+# 卸载
+kubectl delete -k deploy/k8s/
 ```
 
 ---
 
-## 4. 存储与持久化
+## 环境变量参考
 
-### SQLite (当前方案)
+| 变量 | 组件 | 必填 | 说明 |
+|------|------|------|------|
+| `ANTHROPIC_API_KEY` | Backend | Yes* | Claude API Key |
+| `OPENAI_API_KEY` | Backend | Yes* | OpenAI API Key |
+| `CI_AGENT_PROVIDER` | Backend | No | `anthropic` (默认) / `openai` |
+| `CI_AGENT_MODEL` | Backend | No | 模型名，默认 `claude-sonnet-4-20250514` |
+| `CI_AGENT_BASE_URL` | Backend | No | OpenAI 兼容端点，默认官方 |
+| `CI_AGENT_LANGUAGE` | Backend | No | `en` (默认) / `zh` |
+| `GITHUB_TOKEN` | Backend | Recommended | 获取 CI 运行历史和 Action SHA |
+| `CORS_ORIGINS` | Backend | No | 允许的前端域名，默认 `http://localhost:3000` |
+| `CI_AGENT_LOG_LEVEL` | Backend | No | 日志级别，默认 `INFO` |
+| `NEXT_PUBLIC_API_URL` | Frontend | No | Backend 地址（SSR 用），K8s 内默认 `http://ci-agent-backend:8000` |
 
-- 数据存储在 PVC 的 `data.db` 文件中
-- **限制**：Backend 只能 1 个副本（SQLite 不支持并发写入）
-- 适合：小团队 / 个人使用 / 概念验证
-
-### 升级到 PostgreSQL (生产推荐)
-
-如需多副本 Backend 或更高可靠性，替换为 PostgreSQL：
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Backend x3  │────▶│  PostgreSQL  │◀────│  Backend x3  │
-│  (replicas)  │     │  (StatefulSet│     │  (replicas)  │
-└──────────────┘     │   or RDS)    │     └──────────────┘
-                     └──────────────┘
-```
-
-需修改：
-1. `db/database.py`: 将连接字符串改为 `postgresql+asyncpg://...`
-2. `pyproject.toml`: 添加 `asyncpg` 依赖
-3. `backend.yaml`: replicas 可设为 2+，strategy 改为 RollingUpdate
-4. 添加 PostgreSQL StatefulSet 或使用云托管 RDS
+*`ANTHROPIC_API_KEY` 和 `OPENAI_API_KEY` 至少填一个。
 
 ---
 
-## 5. 扩展与高可用
+## 存储与持久化
 
-### 当前架构限制
+### SQLite（默认）
 
-```
-Frontend (x2) ─── Backend (x1) ─── SQLite (file)
-     ✓ 可扩展        ✗ 单点         ✗ 单文件
-```
+- 数据存储在 PVC 或 volume 的 `/data/.ci-agent/data.db`
+- **限制**：Backend 只能 1 个副本
+- 适合：个人/小团队使用
 
-### 生产架构建议
+### 升级到 PostgreSQL（生产多副本）
 
-```
-                    ┌─────────────┐
-                    │   Ingress   │
-                    │  (nginx/ALB)│
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │Frontend  │ │Frontend  │ │Frontend  │
-        │ (x2-3)  │ │ (x2-3)  │ │ (x2-3)  │
-        └──────────┘ └──────────┘ └──────────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │ Backend  │ │ Backend  │ │ Backend  │
-        │  (x2-3)  │ │  (x2-3)  │ │  (x2-3)  │
-        └──────────┘ └──────────┘ └──────────┘
-                           │
-                    ┌──────▼──────┐
-                    │ PostgreSQL  │
-                    │ (HA / RDS)  │
-                    └─────────────┘
+```bash
+# 1. 修改 backend 依赖
+pip install asyncpg
+
+# 2. 修改 db/database.py 连接字符串
+DATABASE_URL = "postgresql+asyncpg://user:pass@host/ci_agent"
+
+# 3. backend.yaml replicas 可调为 2+，strategy 改为 RollingUpdate
+# 4. 添加 PostgreSQL StatefulSet 或使用云托管 RDS/CloudSQL
 ```
 
-### HPA (可选)
+---
+
+## 高可用与扩展
+
+| 组件 | 当前 | 高可用方案 |
+|------|------|----------|
+| Frontend | 2 replicas | HPA（CPU > 70% 自动扩容）|
+| Backend | 1 replica（SQLite 限制）| 换 PostgreSQL 后可扩容 |
+| 数据库 | SQLite PVC | PostgreSQL HA / 云托管 RDS |
+
+**Frontend HPA 配置：**
 
 ```yaml
 apiVersion: autoscaling/v2
@@ -287,47 +308,57 @@ spec:
 
 ---
 
-## 6. 安全建议
+## 安全建议
 
-1. **Secrets 管理**：生产环境不要直接在 YAML 中明文存放 API Key，使用：
+1. **Secrets 管理**：生产环境不要在 YAML 中明文存放密钥，改用：
    - [External Secrets Operator](https://external-secrets.io/)
    - [Sealed Secrets](https://sealed-secrets.netlify.app/)
-   - 云厂商 KMS (AWS Secrets Manager / GCP Secret Manager)
+   - 云厂商 KMS（AWS Secrets Manager / GCP Secret Manager / Azure Key Vault）
 
-2. **网络策略**：限制 Backend 的出站流量仅允许 Anthropic API 和 GitHub API
+2. **TLS**：通过 cert-manager 自动签发证书，uncomment `ingress.yaml` 中的 `tls` 段
 
-3. **TLS**：通过 cert-manager 自动签发证书
+3. **网络策略**：限制 Backend 出站仅允许 Anthropic API、OpenAI API 和 GitHub API
 
-4. **RBAC**：为 ci-agent namespace 创建独立 ServiceAccount
-
-5. **镜像安全**：使用私有镜像仓库 + 镜像扫描
+4. **镜像安全**：使用私有镜像仓库 + Trivy / Grype 镜像扫描
 
 ---
 
-## 7. 快速命令参考
+## 故障排查
+
+### Backend Pod 无法启动
 
 ```bash
-# 部署
-kubectl apply -k deploy/k8s/
-
-# 查看状态
-kubectl -n ci-agent get all
-
-# 查看后端日志
-kubectl -n ci-agent logs -f deploy/ci-agent-backend
-
-# 更新镜像
-kubectl -n ci-agent set image deploy/ci-agent-backend backend=$REGISTRY/backend:v0.2.0
-kubectl -n ci-agent set image deploy/ci-agent-frontend frontend=$REGISTRY/frontend:v0.2.0
-
-# 更新配置
-kubectl -n ci-agent edit configmap ci-agent-config
-kubectl -n ci-agent rollout restart deploy/ci-agent-backend
-
-# 更新 Secret
-kubectl -n ci-agent edit secret ci-agent-secrets
-kubectl -n ci-agent rollout restart deploy/ci-agent-backend
-
-# 卸载
-kubectl delete -k deploy/k8s/
+kubectl -n ci-agent describe pod <backend-pod>
+kubectl -n ci-agent logs <backend-pod> --previous
 ```
+
+常见原因：
+- Secret 中 `ANTHROPIC_API_KEY` 未填入真实值
+- PVC 无法绑定（StorageClass 不存在）
+- 镜像拉取失败（imagePullPolicy / 私有仓库认证）
+
+### 分析失败（前端报错）
+
+```bash
+# 查看 backend 实时日志
+kubectl -n ci-agent logs -f deployment/ci-agent-backend
+
+# 或 Docker Compose
+docker compose logs -f backend
+```
+
+常见原因：
+- `GITHUB_TOKEN` 未配置，无法拉取 CI 历史
+- 网络出口限制，无法访问 GitHub / Anthropic API
+- 分析超时（默认 Ingress 超时 300s，AI 分析可能超过）
+
+### Ingress 502 / 504
+
+```bash
+# 确认 backend Service 正常
+kubectl -n ci-agent get svc ci-agent-backend
+kubectl -n ci-agent port-forward svc/ci-agent-backend 8000:8000
+curl http://localhost:8000/health
+```
+
+检查 `ingress.yaml` 中的 `proxy-read-timeout` 是否足够（默认已设 300s）。

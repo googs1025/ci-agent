@@ -31,9 +31,6 @@ spec:
                 name: ci-agent-secrets
             - configMapRef:
                 name: ci-agent-config
-          env:
-            - name: HOME
-              value: /data
           volumeMounts:
             - name: data
               mountPath: /data/.ci-agent
@@ -46,16 +43,18 @@ spec:
               memory: 512Mi
           readinessProbe:
             httpGet:
-              path: /docs
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /docs
+              path: /health
               port: 8000
             initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
             periodSeconds: 30
+            failureThreshold: 3
       volumes:
         - name: data
           persistentVolumeClaim:

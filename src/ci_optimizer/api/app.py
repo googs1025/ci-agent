@@ -63,3 +63,9 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+
+@app.get("/health", tags=["health"])
+async def health():
+    """Liveness / readiness probe endpoint."""
+    return {"status": "ok"}

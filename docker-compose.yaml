@@ -7,13 +7,22 @@ services:
       - "8000:8000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CI_AGENT_PROVIDER=${CI_AGENT_PROVIDER:-anthropic}
       - CI_AGENT_MODEL=${CI_AGENT_MODEL:-claude-sonnet-4-20250514}
+      - CI_AGENT_BASE_URL=${CI_AGENT_BASE_URL:-}
+      - CI_AGENT_LANGUAGE=${CI_AGENT_LANGUAGE:-en}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
       - CORS_ORIGINS=http://localhost:3000
-      - HOME=/data
     volumes:
       - ci-agent-data:/data/.ci-agent
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
   frontend:
     build:
@@ -24,8 +33,15 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
 volumes:
   ci-agent-data:
