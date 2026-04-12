@@ -1,6 +1,6 @@
 """Analysis filter definitions for CI pipeline analysis."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 

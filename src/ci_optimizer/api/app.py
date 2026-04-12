@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Preload the skill registry singleton so the first request doesn't pay the scan cost.
     from ci_optimizer.agents.skill_registry import get_registry
+
     skills = get_registry().get_active_skills()
     logging.getLogger("ci_optimizer").info(
         "Skill registry loaded: %d active skill(s): %s",

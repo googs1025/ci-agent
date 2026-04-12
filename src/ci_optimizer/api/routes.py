@@ -1,24 +1,22 @@
 """FastAPI route handlers."""
 
-import asyncio
 import json
-import traceback
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
 from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
-    SkillImportRequest,
-    SkillImportResponse,
     AgentConfigSchema,
     AnalyzeRequest,
     DashboardResponse,
+    FindingSchema,
     ReportDetail,
     ReportListResponse,
     ReportSummary,
     RepositorySchema,
-    FindingSchema,
+    SkillImportRequest,
+    SkillImportResponse,
     SkillSchema,
 )
 from ci_optimizer.config import AgentConfig
@@ -64,8 +62,7 @@ def _build_config_from_schema(schema: AgentConfigSchema | None) -> AgentConfig:
     """Build AgentConfig from base config + per-request overrides."""
     config = AgentConfig.load()
     if schema:
-        for field in ("provider", "model", "fallback_model", "anthropic_api_key",
-                       "openai_api_key", "github_token", "base_url", "language"):
+        for field in ("provider", "model", "fallback_model", "anthropic_api_key", "openai_api_key", "github_token", "base_url", "language"):
             val = getattr(schema, field, None)
             if val is not None:
                 setattr(config, field, val)
@@ -84,16 +81,20 @@ async def _run_analysis_task(
     """Background task to run the analysis."""
     import logging
     import shutil
+
     logger = logging.getLogger("ci_optimizer.background")
 
     resolved = None
     ctx = None
     async with async_session() as session:
         try:
-            logger.info(f"[report={report_id}] Starting analysis: repo={repo_input}, provider={config.provider if config else 'default'}, lang={config.language if config else 'default'}")
+            logger.info(
+                f"[report={report_id}] Starting analysis: repo={repo_input}, provider={config.provider if config else 'default'}, lang={config.language if config else 'default'}"
+            )
 
             # Load skills to compute required data (uses singleton cache)
             from ci_optimizer.agents.skill_registry import get_registry
+
             registry = get_registry()
             skills = registry.get_active_skills(selected=selected_skills)
             required_data = registry.collect_required_data(skills)
@@ -125,8 +126,7 @@ async def _run_analysis_task(
         finally:
             # Cleanup temp files and cloned repos
             if ctx:
-                for attr in ("runs_json_path", "jobs_json_path", "usage_stats_json_path",
-                              "logs_json_path", "workflows_json_path"):
+                for attr in ("runs_json_path", "jobs_json_path", "usage_stats_json_path", "logs_json_path", "workflows_json_path"):
                     p = getattr(ctx, attr, None)
                     if p and p.exists():
                         try:
@@ -145,7 +145,7 @@ async def analyze(
 ):
     """Trigger a new CI pipeline analysis."""
     # Extract owner/repo without cloning (clone deferred to background task)
-    from ci_optimizer.resolver import is_github_url, is_github_shorthand, parse_github_url, GITHUB_SHORTHAND_PATTERN
+    from ci_optimizer.resolver import GITHUB_SHORTHAND_PATTERN, is_github_shorthand, is_github_url, parse_github_url
 
     repo_input = request.repo
     if is_github_url(repo_input):
@@ -156,6 +156,7 @@ async def analyze(
     else:
         # Local path — validate exists and is safe
         from pathlib import Path
+
         p = Path(repo_input).resolve()
         if not p.exists():
             raise HTTPException(status_code=400, detail=f"Path does not exist: {repo_input}")
@@ -167,7 +168,9 @@ async def analyze(
         repo_name = p.name
 
     db_repo = await get_or_create_repo(
-        db, owner, repo_name,
+        db,
+        owner,
+        repo_name,
         url=repo_input if owner != "local" else None,
     )
 
@@ -178,9 +181,7 @@ async def analyze(
     report = await create_report(db, db_repo.id, filters_json)
     await db.commit()
 
-    background_tasks.add_task(
-        _run_analysis_task, report.id, request.repo, filters, config, request.skills
-    )
+    background_tasks.add_task(_run_analysis_task, report.id, request.repo, filters, config, request.skills)
 
     return {"report_id": report.id, "status": "running"}
 
@@ -293,8 +294,7 @@ async def get_config():
 async def update_config(updates: AgentConfigSchema):
     """Update agent configuration."""
     config = AgentConfig.load()
-    for field in ("provider", "model", "fallback_model", "anthropic_api_key",
-                   "openai_api_key", "github_token", "base_url", "language"):
+    for field in ("provider", "model", "fallback_model", "anthropic_api_key", "openai_api_key", "github_token", "base_url", "language"):
         val = getattr(updates, field, None)
         if val is not None:
             setattr(config, field, val)
@@ -308,6 +308,7 @@ async def update_config(updates: AgentConfigSchema):
 async def get_skills():
     """List all available analysis skills (builtin + user)."""
     from ci_optimizer.agents.skill_registry import get_registry
+
     registry = get_registry()
     # Include all skills (enabled + disabled) so users can see what's available
     all_skills = list(registry._skills.values())
@@ -333,16 +334,14 @@ async def get_skills():
 async def reload_skills():
     """Rescan builtin + user skill directories and refresh the registry cache."""
     from ci_optimizer.agents.skill_registry import get_registry
+
     registry = get_registry()
     registry.reload()
     skills = registry.get_active_skills()
     return {
         "reloaded": True,
         "active_count": len(skills),
-        "skills": [
-            {"name": s.name, "dimension": s.dimension, "source": s.source}
-            for s in skills
-        ],
+        "skills": [{"name": s.name, "dimension": s.dimension, "source": s.source} for s in skills],
     }
 
 
@@ -366,13 +365,9 @@ async def import_skill(req: SkillImportRequest):
 
     try:
         if req.source_type == "claude-code":
-            result = import_from_claude_code(
-                req.source, dimension=req.dimension, requires_data=req.requires_data
-            )
+            result = import_from_claude_code(req.source, dimension=req.dimension, requires_data=req.requires_data)
         elif req.source_type == "opencode":
-            result = import_from_opencode(
-                req.source, dimension=req.dimension, requires_data=req.requires_data
-            )
+            result = import_from_opencode(req.source, dimension=req.dimension, requires_data=req.requires_data)
         elif req.source_type == "path":
             result = import_from_path(
                 _P(req.source),
@@ -382,9 +377,7 @@ async def import_skill(req: SkillImportRequest):
                 source_kind="path",
             )
         elif req.source_type == "github":
-            result = install_from_github(
-                req.source, dimension=req.dimension, requires_data=req.requires_data
-            )
+            result = install_from_github(req.source, dimension=req.dimension, requires_data=req.requires_data)
         else:  # pragma: no cover — pydantic validates the literal
             raise HTTPException(400, f"Unknown source_type: {req.source_type}")
     except SkillImportError as e:

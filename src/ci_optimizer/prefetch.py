@@ -166,12 +166,23 @@ def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> d
     job_durations = []
     queue_waits = []
     step_timings = []
-    workflow_stats: dict = defaultdict(lambda: {
-        "count": 0, "success": 0, "failure": 0, "durations_ms": [],
-    })
-    job_name_stats: dict = defaultdict(lambda: {
-        "count": 0, "success": 0, "failure": 0, "durations_ms": [], "queue_waits_ms": [],
-    })
+    workflow_stats: dict = defaultdict(
+        lambda: {
+            "count": 0,
+            "success": 0,
+            "failure": 0,
+            "durations_ms": [],
+        }
+    )
+    job_name_stats: dict = defaultdict(
+        lambda: {
+            "count": 0,
+            "success": 0,
+            "failure": 0,
+            "durations_ms": [],
+            "queue_waits_ms": [],
+        }
+    )
 
     # Process runs
     for run in runs:
@@ -213,7 +224,7 @@ def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> d
                 job_name_stats[job_name]["durations_ms"].append(exec_dur)
 
                 # Billing estimate: round up to nearest minute × multiplier
-                minutes = (exec_dur / 60000)
+                minutes = exec_dur / 60000
                 billed = math.ceil(minutes)
                 multiplier = RUNNER_MULTIPLIERS.get(runner_os, 1)
                 stats["billing_estimate"]["total_minutes"] += billed * multiplier
@@ -229,12 +240,14 @@ def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> d
             for step in job.get("steps", []):
                 step_dur = _duration_ms(step.get("started_at"), step.get("completed_at"))
                 if step_dur and step_dur > 0:
-                    step_timings.append({
-                        "job": job_name,
-                        "step": step.get("name", "unknown"),
-                        "duration_ms": step_dur,
-                        "conclusion": step.get("conclusion"),
-                    })
+                    step_timings.append(
+                        {
+                            "job": job_name,
+                            "step": step.get("name", "unknown"),
+                            "duration_ms": step_dur,
+                            "conclusion": step.get("conclusion"),
+                        }
+                    )
 
     # Aggregate timing stats
     if run_durations:
@@ -302,15 +315,11 @@ async def prepare_context(
     # Collect workflow files (always — local file system, no API cost)
     workflows_dir = resolved.local_path / ".github" / "workflows"
     if workflows_dir.exists():
-        ctx.workflow_files = sorted(
-            p for p in workflows_dir.iterdir()
-            if p.suffix in (".yml", ".yaml")
-        )
+        ctx.workflow_files = sorted(p for p in workflows_dir.iterdir() if p.suffix in (".yml", ".yaml"))
 
     if not ctx.workflow_files:
         raise FileNotFoundError(
-            f"No GitHub Actions workflow files found in {workflows_dir}. "
-            "Make sure the repository has .github/workflows/*.yml files."
+            f"No GitHub Actions workflow files found in {workflows_dir}. Make sure the repository has .github/workflows/*.yml files."
         )
 
     # Compute which data types are needed
@@ -336,10 +345,7 @@ async def prepare_context(
                 # Fetch jobs for runs (cap to avoid rate limiting)
                 runs_for_jobs = runs[:MAX_RUNS_FOR_JOBS]
                 if len(runs) > MAX_RUNS_FOR_JOBS:
-                    logger.info(
-                        f"Limiting job fetch to {MAX_RUNS_FOR_JOBS}/{len(runs)} runs "
-                        f"to avoid API rate limits"
-                    )
+                    logger.info(f"Limiting job fetch to {MAX_RUNS_FOR_JOBS}/{len(runs)} runs to avoid API rate limits")
                 for i, run in enumerate(runs_for_jobs):
                     run_id = run["id"]
                     try:
@@ -405,10 +411,7 @@ async def prepare_context(
                                 "conclusion": j.get("conclusion"),
                                 "started_at": j.get("started_at"),
                                 "completed_at": j.get("completed_at"),
-                                "steps": [
-                                    s for s in j.get("steps", [])
-                                    if s.get("conclusion") == "failure"
-                                ],
+                                "steps": [s for s in j.get("steps", []) if s.get("conclusion") == "failure"],
                             }
                             for j in failed_jobs
                         ],

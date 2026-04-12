@@ -3,10 +3,7 @@
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from ci_optimizer.agents.skill_registry import (
-    Skill,
     SkillRegistry,
     get_registry,
     reset_registry,
@@ -19,7 +16,8 @@ class TestSkillParsing:
     def test_parse_valid_skill(self, tmp_path):
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: test-analyst
             description: A test specialist
@@ -43,7 +41,8 @@ class TestSkillParsing:
             ## Instructions
 
             Analyze the workflows.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -65,7 +64,8 @@ class TestSkillParsing:
         """Missing optional fields get defaults."""
         skill_dir = tmp_path / "minimal"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: minimal-analyst
             description: Minimal skill
@@ -73,7 +73,8 @@ class TestSkillParsing:
             ---
 
             Analyze things.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -90,7 +91,8 @@ class TestSkillParsing:
         """If prompt has no '## Output Format', FINDING_JSON_FORMAT is appended."""
         skill_dir = tmp_path / "no-format"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: noformat-analyst
             description: No output format
@@ -98,7 +100,8 @@ class TestSkillParsing:
             ---
 
             Just analyze.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -109,7 +112,8 @@ class TestSkillParsing:
         """If prompt already has '## Output Format', don't double-append."""
         skill_dir = tmp_path / "has-format"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: hasformat-analyst
             description: Has format
@@ -121,7 +125,8 @@ class TestSkillParsing:
             ## Output Format
 
             Custom format here.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -132,13 +137,15 @@ class TestSkillParsing:
         """Invalid SKILL.md (missing required field) is skipped."""
         skill_dir = tmp_path / "bad"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: bad-analyst
             ---
 
             No dimension field.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -148,7 +155,8 @@ class TestSkillParsing:
         """Unknown requires_data values cause skill to be skipped."""
         skill_dir = tmp_path / "bad-data"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: baddata-analyst
             description: Bad data
@@ -158,7 +166,8 @@ class TestSkillParsing:
             ---
 
             Analyze.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -168,7 +177,8 @@ class TestSkillParsing:
         """enabled: false skills are excluded from active list."""
         skill_dir = tmp_path / "disabled"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: disabled-analyst
             description: Disabled
@@ -177,7 +187,8 @@ class TestSkillParsing:
             ---
 
             Analyze.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -203,7 +214,8 @@ class TestSkillOverride:
         # Builtin skill
         bd = builtin_dir / "security"
         bd.mkdir(parents=True)
-        (bd / "SKILL.md").write_text(textwrap.dedent("""\
+        (bd / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: security-analyst
             description: Builtin security
@@ -211,12 +223,14 @@ class TestSkillOverride:
             ---
 
             Builtin prompt.
-        """))
+        """)
+        )
 
         # User skill with same name
         ud = user_dir / "security"
         ud.mkdir(parents=True)
-        (ud / "SKILL.md").write_text(textwrap.dedent("""\
+        (ud / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: security-analyst
             description: Custom security with compliance
@@ -225,7 +239,8 @@ class TestSkillOverride:
             ---
 
             Custom prompt with compliance rules.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
         registry.load()
@@ -242,7 +257,8 @@ class TestSkillOverride:
 
         bd = builtin_dir / "security"
         bd.mkdir(parents=True)
-        (bd / "SKILL.md").write_text(textwrap.dedent("""\
+        (bd / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: security-analyst
             description: Security
@@ -250,11 +266,13 @@ class TestSkillOverride:
             ---
 
             Security prompt.
-        """))
+        """)
+        )
 
         ud = user_dir / "reliability"
         ud.mkdir(parents=True)
-        (ud / "SKILL.md").write_text(textwrap.dedent("""\
+        (ud / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: reliability-analyst
             description: Reliability
@@ -265,7 +283,8 @@ class TestSkillOverride:
             ---
 
             Reliability prompt.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
         registry.load()
@@ -283,7 +302,8 @@ class TestSkillSelection:
         for name in names:
             d = tmp_path / name
             d.mkdir(parents=True, exist_ok=True)
-            (d / "SKILL.md").write_text(textwrap.dedent(f"""\
+            (d / "SKILL.md").write_text(
+                textwrap.dedent(f"""\
                 ---
                 name: {name}-analyst
                 description: {name} analysis
@@ -291,7 +311,8 @@ class TestSkillSelection:
                 ---
 
                 Analyze {name}.
-            """))
+            """)
+            )
 
     def test_select_subset(self, tmp_path):
         self._make_skills(tmp_path, ["efficiency", "security", "cost", "errors"])
@@ -343,7 +364,8 @@ class TestCollectRequiredData:
     def test_collect_union(self, tmp_path):
         d1 = tmp_path / "s1"
         d1.mkdir()
-        (d1 / "SKILL.md").write_text(textwrap.dedent("""\
+        (d1 / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: s1
             description: S1
@@ -353,11 +375,13 @@ class TestCollectRequiredData:
             ---
 
             Prompt 1.
-        """))
+        """)
+        )
 
         d2 = tmp_path / "s2"
         d2.mkdir()
-        (d2 / "SKILL.md").write_text(textwrap.dedent("""\
+        (d2 / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: s2
             description: S2
@@ -369,7 +393,8 @@ class TestCollectRequiredData:
             ---
 
             Prompt 2.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         registry.load()
@@ -409,7 +434,8 @@ class TestSingletonAndReload:
         # Use a custom registry so we can control the source.
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: test-analyst
             description: Test
@@ -417,7 +443,8 @@ class TestSingletonAndReload:
             ---
 
             Prompt.
-        """))
+        """)
+        )
 
         reg = SkillRegistry(builtin_dir=tmp_path, user_dir=tmp_path / "noexist")
         reg.load()
@@ -426,7 +453,8 @@ class TestSingletonAndReload:
         # Add a second skill on disk and reload
         skill2 = tmp_path / "second"
         skill2.mkdir()
-        (skill2 / "SKILL.md").write_text(textwrap.dedent("""\
+        (skill2 / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: second-analyst
             description: Second
@@ -434,7 +462,8 @@ class TestSingletonAndReload:
             ---
 
             Prompt.
-        """))
+        """)
+        )
 
         reg.reload()
         skills = reg.get_active_skills()

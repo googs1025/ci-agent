@@ -1,14 +1,13 @@
 """Tests for report formatter."""
 
 import json
-from pathlib import Path
 
 import pytest
 
 from ci_optimizer.agents.orchestrator import AnalysisResult
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.prefetch import AnalysisContext
-from ci_optimizer.report.formatter import format_markdown, format_json
+from ci_optimizer.report.formatter import format_json, format_markdown
 
 
 @pytest.fixture
@@ -108,9 +107,7 @@ class TestFormatMarkdown:
         assert "No findings in this dimension" in md  # error dimension is empty
 
     def test_with_filters(self, sample_result, sample_context):
-        sample_context.filters = AnalysisFilters(
-            workflows=["ci.yml"], branches=["main"]
-        )
+        sample_context.filters = AnalysisFilters(workflows=["ci.yml"], branches=["main"])
         md = format_markdown(sample_result, sample_context)
         assert "Filters Applied" in md
         assert "ci.yml" in md
@@ -118,14 +115,16 @@ class TestFormatMarkdown:
 
     def test_escapes_pipes(self, sample_context):
         result = AnalysisResult(
-            findings=[{
-                "dimension": "efficiency",
-                "severity": "info",
-                "title": "Use A | B pattern",
-                "description": "test",
-                "file": "ci.yml",
-                "suggestion": "Do X | Y",
-            }],
+            findings=[
+                {
+                    "dimension": "efficiency",
+                    "severity": "info",
+                    "title": "Use A | B pattern",
+                    "description": "test",
+                    "file": "ci.yml",
+                    "suggestion": "Do X | Y",
+                }
+            ],
             stats={"total_findings": 1, "critical": 0, "major": 0, "minor": 0, "info": 1},
             duration_ms=100,
         )

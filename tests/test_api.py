@@ -2,17 +2,16 @@
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ci_optimizer.api.app import app
 from ci_optimizer.api.routes import get_db
-from ci_optimizer.db.models import Base
-from ci_optimizer.db.crud import get_or_create_repo, create_report, complete_report
+from ci_optimizer.db.crud import complete_report, create_report, get_or_create_repo
 
 
 @pytest.fixture
 async def test_app(db_session):
     """Override the database dependency with test session."""
+
     async def override_get_db():
         yield db_session
 
@@ -42,8 +41,10 @@ class TestDashboardEndpoint:
         repo = await get_or_create_repo(db_session, "octocat", "hello")
         report = await create_report(db_session, repo.id)
         await complete_report(
-            db_session, report.id,
-            summary_md="test", full_report_json="{}",
+            db_session,
+            report.id,
+            summary_md="test",
+            full_report_json="{}",
             findings_data=[
                 {"dimension": "efficiency", "severity": "major", "title": "T", "description": "d"},
             ],
@@ -116,8 +117,10 @@ class TestReportDetailEndpoint:
         repo = await get_or_create_repo(db_session, "octocat", "hello")
         report = await create_report(db_session, repo.id)
         await complete_report(
-            db_session, report.id,
-            summary_md="# Summary", full_report_json='{"test": true}',
+            db_session,
+            report.id,
+            summary_md="# Summary",
+            full_report_json='{"test": true}',
             findings_data=[
                 {"dimension": "security", "severity": "critical", "title": "Issue", "description": "Bad"},
             ],

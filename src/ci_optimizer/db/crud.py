@@ -1,18 +1,15 @@
 """CRUD operations for CI Agent database."""
 
-import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ci_optimizer.db.models import AnalysisReport, Finding, Repository
 
 
-async def get_or_create_repo(
-    session: AsyncSession, owner: str, repo: str, url: str | None = None
-) -> Repository:
+async def get_or_create_repo(session: AsyncSession, owner: str, repo: str, url: str | None = None) -> Repository:
     stmt = select(Repository).where(Repository.owner == owner, Repository.repo == repo)
     result = await session.execute(stmt)
     db_repo = result.scalar_one_or_none()
@@ -82,9 +79,7 @@ async def complete_report(
     return report
 
 
-async def fail_report(
-    session: AsyncSession, report_id: int, error_message: str
-) -> None:
+async def fail_report(session: AsyncSession, report_id: int, error_message: str) -> None:
     stmt = select(AnalysisReport).where(AnalysisReport.id == report_id)
     result = await session.execute(stmt)
     report = result.scalar_one()
@@ -118,12 +113,8 @@ async def list_reports(
     count_stmt = select(func.count(AnalysisReport.id))
 
     if repo_owner and repo_name:
-        stmt = stmt.join(Repository).where(
-            Repository.owner == repo_owner, Repository.repo == repo_name
-        )
-        count_stmt = count_stmt.join(Repository).where(
-            Repository.owner == repo_owner, Repository.repo == repo_name
-        )
+        stmt = stmt.join(Repository).where(Repository.owner == repo_owner, Repository.repo == repo_name)
+        count_stmt = count_stmt.join(Repository).where(Repository.owner == repo_owner, Repository.repo == repo_name)
 
     total_result = await session.execute(count_stmt)
     total = total_result.scalar() or 0
@@ -145,16 +136,10 @@ async def get_dashboard_stats(session: AsyncSession) -> dict:
     repo_count = await session.execute(select(func.count(Repository.id)))
     report_count = await session.execute(select(func.count(AnalysisReport.id)))
 
-    severity_stmt = (
-        select(Finding.severity, func.count(Finding.id))
-        .group_by(Finding.severity)
-    )
+    severity_stmt = select(Finding.severity, func.count(Finding.id)).group_by(Finding.severity)
     severity_result = await session.execute(severity_stmt)
 
-    dimension_stmt = (
-        select(Finding.dimension, func.count(Finding.id))
-        .group_by(Finding.dimension)
-    )
+    dimension_stmt = select(Finding.dimension, func.count(Finding.id)).group_by(Finding.dimension)
     dimension_result = await session.execute(dimension_stmt)
 
     recent_stmt = (

@@ -4,111 +4,108 @@ These tests mock the Claude Agent SDK (no real API calls) but exercise
 the entire flow: resolver → prefetch → orchestrator → formatter → API.
 """
 
-import asyncio
 import json
-import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from ci_optimizer.agents.orchestrator import AnalysisResult, run_analysis, _parse_result
+from ci_optimizer.agents.orchestrator import AnalysisResult, _parse_result
 from ci_optimizer.api.app import app
 from ci_optimizer.api.routes import get_db
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.db.models import Base
-from ci_optimizer.filters import AnalysisFilters
-from ci_optimizer.prefetch import prepare_context, AnalysisContext
-from ci_optimizer.report.formatter import format_markdown, format_json
-from ci_optimizer.resolver import resolve_input, ResolvedInput
-
+from ci_optimizer.prefetch import prepare_context
+from ci_optimizer.report.formatter import format_json, format_markdown
+from ci_optimizer.resolver import ResolvedInput, resolve_input
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
-MOCK_ORCHESTRATOR_OUTPUT = json.dumps({
-    "executive_summary": "Top 3 recommendations: 1) Pin actions to SHA, 2) Add dependency caching, 3) Switch deploy to ubuntu runner.",
-    "dimensions": {
-        "efficiency": {
-            "findings": [
-                {
-                    "severity": "major",
-                    "title": "Missing dependency cache",
-                    "description": "npm install runs without cache on every CI run",
-                    "file": ".github/workflows/ci.yml",
-                    "line": 14,
-                    "suggestion": "Add actions/cache with package-lock.json hash key",
-                    "impact": "~30% faster builds",
-                },
-                {
-                    "severity": "minor",
-                    "title": "Unnecessary sequential lint job",
-                    "description": "Lint job has needs: [test] but does not depend on test output",
-                    "file": ".github/workflows/ci.yml",
-                    "line": 20,
-                    "suggestion": "Remove needs: [test] to run lint in parallel",
-                    "impact": "~2 min saved per run",
-                },
-            ]
+MOCK_ORCHESTRATOR_OUTPUT = json.dumps(
+    {
+        "executive_summary": "Top 3 recommendations: 1) Pin actions to SHA, 2) Add dependency caching, 3) Switch deploy to ubuntu runner.",
+        "dimensions": {
+            "efficiency": {
+                "findings": [
+                    {
+                        "severity": "major",
+                        "title": "Missing dependency cache",
+                        "description": "npm install runs without cache on every CI run",
+                        "file": ".github/workflows/ci.yml",
+                        "line": 14,
+                        "suggestion": "Add actions/cache with package-lock.json hash key",
+                        "impact": "~30% faster builds",
+                    },
+                    {
+                        "severity": "minor",
+                        "title": "Unnecessary sequential lint job",
+                        "description": "Lint job has needs: [test] but does not depend on test output",
+                        "file": ".github/workflows/ci.yml",
+                        "line": 20,
+                        "suggestion": "Remove needs: [test] to run lint in parallel",
+                        "impact": "~2 min saved per run",
+                    },
+                ]
+            },
+            "security": {
+                "findings": [
+                    {
+                        "severity": "critical",
+                        "title": "Action pinned to mutable ref",
+                        "description": "actions/checkout@main can be hijacked via tag mutation",
+                        "file": ".github/workflows/deploy.yml",
+                        "line": 7,
+                        "suggestion": "Pin to full SHA: actions/checkout@b4ffde6...",
+                        "impact": "Prevents supply chain attack",
+                    },
+                    {
+                        "severity": "major",
+                        "title": "Overly permissive permissions",
+                        "description": "permissions: write-all grants unnecessary access",
+                        "file": ".github/workflows/deploy.yml",
+                        "line": 5,
+                        "suggestion": "Set granular permissions: contents: read, deployments: write",
+                        "impact": "Reduces blast radius of compromised workflow",
+                    },
+                ]
+            },
+            "cost": {
+                "findings": [
+                    {
+                        "severity": "major",
+                        "title": "macOS runner for non-native workload",
+                        "description": "Deploy job runs npm commands on macos-latest (10x cost)",
+                        "file": ".github/workflows/deploy.yml",
+                        "line": 10,
+                        "suggestion": "Switch to ubuntu-latest",
+                        "impact": "10x cost reduction for deploy job",
+                    },
+                ]
+            },
+            "error": {
+                "findings": [
+                    {
+                        "severity": "info",
+                        "title": "No failure data available",
+                        "description": "No CI run history provided, analysis based on workflow structure only",
+                        "file": "",
+                        "suggestion": "Provide GITHUB_TOKEN for historical failure analysis",
+                        "impact": "N/A",
+                    },
+                ]
+            },
         },
-        "security": {
-            "findings": [
-                {
-                    "severity": "critical",
-                    "title": "Action pinned to mutable ref",
-                    "description": "actions/checkout@main can be hijacked via tag mutation",
-                    "file": ".github/workflows/deploy.yml",
-                    "line": 7,
-                    "suggestion": "Pin to full SHA: actions/checkout@b4ffde6...",
-                    "impact": "Prevents supply chain attack",
-                },
-                {
-                    "severity": "major",
-                    "title": "Overly permissive permissions",
-                    "description": "permissions: write-all grants unnecessary access",
-                    "file": ".github/workflows/deploy.yml",
-                    "line": 5,
-                    "suggestion": "Set granular permissions: contents: read, deployments: write",
-                    "impact": "Reduces blast radius of compromised workflow",
-                },
-            ]
+        "stats": {
+            "total_findings": 6,
+            "critical": 1,
+            "major": 3,
+            "minor": 1,
+            "info": 1,
         },
-        "cost": {
-            "findings": [
-                {
-                    "severity": "major",
-                    "title": "macOS runner for non-native workload",
-                    "description": "Deploy job runs npm commands on macos-latest (10x cost)",
-                    "file": ".github/workflows/deploy.yml",
-                    "line": 10,
-                    "suggestion": "Switch to ubuntu-latest",
-                    "impact": "10x cost reduction for deploy job",
-                },
-            ]
-        },
-        "error": {
-            "findings": [
-                {
-                    "severity": "info",
-                    "title": "No failure data available",
-                    "description": "No CI run history provided, analysis based on workflow structure only",
-                    "file": "",
-                    "suggestion": "Provide GITHUB_TOKEN for historical failure analysis",
-                    "impact": "N/A",
-                },
-            ]
-        },
-    },
-    "stats": {
-        "total_findings": 6,
-        "critical": 1,
-        "major": 3,
-        "minor": 1,
-        "info": 1,
-    },
-})
+    }
+)
 
 
 @pytest.fixture
@@ -185,6 +182,7 @@ async def e2e_db():
 @pytest.fixture
 def e2e_client(e2e_db):
     """Async test client with DB override."""
+
     async def override_get_db():
         yield e2e_db
 
@@ -205,6 +203,7 @@ def mock_agent_config(tmp_path):
 
 
 # ── E2E: Parse Result ─────────────────────────────────────────────────
+
 
 class TestParseResult:
     """Test that _parse_result correctly extracts structured data from raw agent output."""
@@ -228,12 +227,13 @@ class TestParseResult:
         assert stats["total_findings"] == 0
 
     def test_json_with_surrounding_text(self):
-        text = 'Here is my analysis:\n' + MOCK_ORCHESTRATOR_OUTPUT + '\nDone.'
+        text = "Here is my analysis:\n" + MOCK_ORCHESTRATOR_OUTPUT + "\nDone."
         summary, findings, stats = _parse_result(text)
         assert len(findings) == 6
 
 
 # ── E2E: Resolver → Prefetch → Report ────────────────────────────────
+
 
 class TestLocalAnalysisPipeline:
     """Test the full pipeline with a local repo (no GitHub API calls)."""
@@ -260,8 +260,24 @@ class TestLocalAnalysisPipeline:
         mock_result = AnalysisResult(
             executive_summary="Top 3 recommendations",
             findings=[
-                {"dimension": "efficiency", "severity": "major", "title": "Missing cache", "description": "No cache", "file": "ci.yml", "suggestion": "Add cache", "impact": "30% faster"},
-                {"dimension": "security", "severity": "critical", "title": "Unpinned action", "description": "Using @main", "file": "deploy.yml", "suggestion": "Pin SHA", "impact": "Supply chain"},
+                {
+                    "dimension": "efficiency",
+                    "severity": "major",
+                    "title": "Missing cache",
+                    "description": "No cache",
+                    "file": "ci.yml",
+                    "suggestion": "Add cache",
+                    "impact": "30% faster",
+                },
+                {
+                    "dimension": "security",
+                    "severity": "critical",
+                    "title": "Unpinned action",
+                    "description": "Using @main",
+                    "file": "deploy.yml",
+                    "suggestion": "Pin SHA",
+                    "impact": "Supply chain",
+                },
             ],
             stats={"total_findings": 2, "critical": 1, "major": 1, "minor": 0, "info": 0},
             duration_ms=3000,
@@ -290,33 +306,38 @@ class TestLocalAnalysisPipeline:
 
 # ── E2E: Prefetch with Mock GitHub API ────────────────────────────────
 
+
 class TestPrefetchWithGitHubAPI:
     """Test full prefetch pipeline with mocked GitHub API including usage stats."""
 
     @pytest.mark.asyncio
     async def test_usage_stats_computed(self, e2e_repo):
-        resolved = ResolvedInput(
-            local_path=e2e_repo, owner="testorg", repo="testrepo"
-        )
+        resolved = ResolvedInput(local_path=e2e_repo, owner="testorg", repo="testrepo")
 
         mock_client = AsyncMock()
         mock_client.list_workflow_runs.return_value = [
             {
-                "id": 101, "name": "CI", "conclusion": "success",
+                "id": 101,
+                "name": "CI",
+                "conclusion": "success",
                 "run_started_at": "2024-06-01T10:00:00Z",
                 "updated_at": "2024-06-01T10:08:00Z",
                 "created_at": "2024-06-01T10:00:00Z",
                 "head_branch": "main",
             },
             {
-                "id": 102, "name": "CI", "conclusion": "failure",
+                "id": 102,
+                "name": "CI",
+                "conclusion": "failure",
                 "run_started_at": "2024-06-01T11:00:00Z",
                 "updated_at": "2024-06-01T11:05:00Z",
                 "created_at": "2024-06-01T11:00:00Z",
                 "head_branch": "main",
             },
             {
-                "id": 103, "name": "Deploy", "conclusion": "success",
+                "id": 103,
+                "name": "Deploy",
+                "conclusion": "success",
                 "run_started_at": "2024-06-01T12:00:00Z",
                 "updated_at": "2024-06-01T12:15:00Z",
                 "created_at": "2024-06-01T12:00:00Z",
@@ -328,50 +349,104 @@ class TestPrefetchWithGitHubAPI:
             if run_id == 101:
                 return [
                     {
-                        "id": 201, "name": "test", "status": "completed", "conclusion": "success",
-                        "created_at": "2024-06-01T10:00:00Z", "started_at": "2024-06-01T10:00:12Z",
+                        "id": 201,
+                        "name": "test",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "created_at": "2024-06-01T10:00:00Z",
+                        "started_at": "2024-06-01T10:00:12Z",
                         "completed_at": "2024-06-01T10:04:00Z",
-                        "runner_id": 1, "runner_name": "r1", "labels": ["ubuntu-latest"],
+                        "runner_id": 1,
+                        "runner_name": "r1",
+                        "labels": ["ubuntu-latest"],
                         "steps": [
-                            {"name": "Checkout", "status": "completed", "conclusion": "success", "number": 1,
-                             "started_at": "2024-06-01T10:00:12Z", "completed_at": "2024-06-01T10:00:15Z"},
-                            {"name": "Run tests", "status": "completed", "conclusion": "success", "number": 2,
-                             "started_at": "2024-06-01T10:00:15Z", "completed_at": "2024-06-01T10:04:00Z"},
+                            {
+                                "name": "Checkout",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "number": 1,
+                                "started_at": "2024-06-01T10:00:12Z",
+                                "completed_at": "2024-06-01T10:00:15Z",
+                            },
+                            {
+                                "name": "Run tests",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "number": 2,
+                                "started_at": "2024-06-01T10:00:15Z",
+                                "completed_at": "2024-06-01T10:04:00Z",
+                            },
                         ],
                     },
                     {
-                        "id": 202, "name": "lint", "status": "completed", "conclusion": "success",
-                        "created_at": "2024-06-01T10:04:00Z", "started_at": "2024-06-01T10:04:08Z",
+                        "id": 202,
+                        "name": "lint",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "created_at": "2024-06-01T10:04:00Z",
+                        "started_at": "2024-06-01T10:04:08Z",
                         "completed_at": "2024-06-01T10:06:00Z",
-                        "runner_id": 2, "runner_name": "r2", "labels": ["ubuntu-latest"],
+                        "runner_id": 2,
+                        "runner_name": "r2",
+                        "labels": ["ubuntu-latest"],
                         "steps": [],
                     },
                 ]
             elif run_id == 102:
                 return [
                     {
-                        "id": 203, "name": "test", "status": "completed", "conclusion": "failure",
-                        "created_at": "2024-06-01T11:00:00Z", "started_at": "2024-06-01T11:00:20Z",
+                        "id": 203,
+                        "name": "test",
+                        "status": "completed",
+                        "conclusion": "failure",
+                        "created_at": "2024-06-01T11:00:00Z",
+                        "started_at": "2024-06-01T11:00:20Z",
                         "completed_at": "2024-06-01T11:03:00Z",
-                        "runner_id": 3, "runner_name": "r3", "labels": ["ubuntu-latest"],
+                        "runner_id": 3,
+                        "runner_name": "r3",
+                        "labels": ["ubuntu-latest"],
                         "steps": [
-                            {"name": "Run tests", "status": "completed", "conclusion": "failure", "number": 2,
-                             "started_at": "2024-06-01T11:00:25Z", "completed_at": "2024-06-01T11:03:00Z"},
+                            {
+                                "name": "Run tests",
+                                "status": "completed",
+                                "conclusion": "failure",
+                                "number": 2,
+                                "started_at": "2024-06-01T11:00:25Z",
+                                "completed_at": "2024-06-01T11:03:00Z",
+                            },
                         ],
                     },
                 ]
             else:  # 103
                 return [
                     {
-                        "id": 204, "name": "deploy", "status": "completed", "conclusion": "success",
-                        "created_at": "2024-06-01T12:00:00Z", "started_at": "2024-06-01T12:00:30Z",
+                        "id": 204,
+                        "name": "deploy",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "created_at": "2024-06-01T12:00:00Z",
+                        "started_at": "2024-06-01T12:00:30Z",
                         "completed_at": "2024-06-01T12:14:00Z",
-                        "runner_id": 4, "runner_name": "r4", "labels": ["macos-latest"],
+                        "runner_id": 4,
+                        "runner_name": "r4",
+                        "labels": ["macos-latest"],
                         "steps": [
-                            {"name": "Build", "status": "completed", "conclusion": "success", "number": 3,
-                             "started_at": "2024-06-01T12:01:00Z", "completed_at": "2024-06-01T12:10:00Z"},
-                            {"name": "Deploy", "status": "completed", "conclusion": "success", "number": 4,
-                             "started_at": "2024-06-01T12:10:00Z", "completed_at": "2024-06-01T12:14:00Z"},
+                            {
+                                "name": "Build",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "number": 3,
+                                "started_at": "2024-06-01T12:01:00Z",
+                                "completed_at": "2024-06-01T12:10:00Z",
+                            },
+                            {
+                                "name": "Deploy",
+                                "status": "completed",
+                                "conclusion": "success",
+                                "number": 4,
+                                "started_at": "2024-06-01T12:10:00Z",
+                                "completed_at": "2024-06-01T12:14:00Z",
+                            },
                         ],
                     },
                 ]
@@ -445,7 +520,16 @@ class TestPrefetchWithGitHubAPI:
         # Format the report to verify it works end-to-end
         mock_result = AnalysisResult(
             executive_summary="Test summary",
-            findings=[{"dimension": "cost", "severity": "major", "title": "macOS cost", "description": "...", "file": "deploy.yml", "suggestion": "Use ubuntu"}],
+            findings=[
+                {
+                    "dimension": "cost",
+                    "severity": "major",
+                    "title": "macOS cost",
+                    "description": "...",
+                    "file": "deploy.yml",
+                    "suggestion": "Use ubuntu",
+                }
+            ],
             stats={"total_findings": 1, "critical": 0, "major": 1, "minor": 0, "info": 0},
             duration_ms=5000,
         )
@@ -458,13 +542,13 @@ class TestPrefetchWithGitHubAPI:
         assert js_data["usage_stats"]["total_runs"] == 3
 
         # Cleanup
-        for p in [ctx.runs_json_path, ctx.jobs_json_path, ctx.usage_stats_json_path,
-                   ctx.logs_json_path, ctx.workflows_json_path]:
+        for p in [ctx.runs_json_path, ctx.jobs_json_path, ctx.usage_stats_json_path, ctx.logs_json_path, ctx.workflows_json_path]:
             if p:
                 p.unlink(missing_ok=True)
 
 
 # ── E2E: API Flow ────────────────────────────────────────────────────
+
 
 class TestAPIFlow:
     """Test API endpoints work together as a complete flow."""
@@ -473,7 +557,9 @@ class TestAPIFlow:
     async def test_analyze_and_retrieve_report(self, e2e_repo, e2e_db, e2e_client):
         """Full flow: create repo+report in DB → complete it → query all endpoints."""
         from ci_optimizer.db.crud import (
-            get_or_create_repo, create_report, complete_report,
+            complete_report,
+            create_report,
+            get_or_create_repo,
         )
 
         # Simulate what the API analyze flow does, but directly in the test DB
@@ -485,10 +571,22 @@ class TestAPIFlow:
             summary_md="# E2E Report\nTop 3: pin actions, add caching, switch runners.",
             full_report_json='{"executive_summary": "E2E test"}',
             findings_data=[
-                {"dimension": "efficiency", "severity": "major", "title": "No cache",
-                 "description": "Missing npm cache", "file": "ci.yml", "suggestion": "Add cache"},
-                {"dimension": "security", "severity": "critical", "title": "Unpinned",
-                 "description": "Action @main", "file": "deploy.yml", "suggestion": "Pin SHA"},
+                {
+                    "dimension": "efficiency",
+                    "severity": "major",
+                    "title": "No cache",
+                    "description": "Missing npm cache",
+                    "file": "ci.yml",
+                    "suggestion": "Add cache",
+                },
+                {
+                    "dimension": "security",
+                    "severity": "critical",
+                    "title": "Unpinned",
+                    "description": "Action @main",
+                    "file": "deploy.yml",
+                    "suggestion": "Pin SHA",
+                },
             ],
             duration_ms=4200,
         )
@@ -496,7 +594,6 @@ class TestAPIFlow:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-
             # Step 1: Retrieve the report
             resp = await client.get(f"/api/reports/{report.id}")
             assert resp.status_code == 200
@@ -562,7 +659,6 @@ class TestAPIFlow:
         """GET /config → PUT /config → GET /config roundtrip."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-
             # Get initial config
             resp = await client.get("/api/config")
             assert resp.status_code == 200
@@ -570,14 +666,16 @@ class TestAPIFlow:
             assert "model" in initial
 
             # Update config
-            with patch("ci_optimizer.api.routes.AgentConfig.load") as mock_load, \
-                 patch("ci_optimizer.api.routes.AgentConfig.save"):
+            with patch("ci_optimizer.api.routes.AgentConfig.load") as mock_load, patch("ci_optimizer.api.routes.AgentConfig.save"):
                 mock_config = AgentConfig()
                 mock_load.return_value = mock_config
 
-                resp = await client.put("/api/config", json={
-                    "model": "claude-opus-4-20250514",
-                })
+                resp = await client.put(
+                    "/api/config",
+                    json={
+                        "model": "claude-opus-4-20250514",
+                    },
+                )
                 assert resp.status_code == 200
                 updated = resp.json()
                 assert updated["model"] == "claude-opus-4-20250514"

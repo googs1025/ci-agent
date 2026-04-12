@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from ci_optimizer.agents.orchestrator import AnalysisResult
 from ci_optimizer.prefetch import AnalysisContext
 
-
 SEVERITY_ICONS = {
     "critical": "🔴",
     "major": "🟠",
@@ -73,9 +72,7 @@ def _get_i18n(language: str) -> dict:
     return I18N.get(language, I18N["en"])
 
 
-def format_summary_markdown(
-    result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
-) -> str:
+def format_summary_markdown(result: AnalysisResult, ctx: AnalysisContext, language: str = "en") -> str:
     """Format a concise executive summary for web display.
 
     Only includes the top-level metadata and the LLM's executive_summary text.
@@ -109,9 +106,7 @@ def format_summary_markdown(
     return "\n".join(lines)
 
 
-def format_markdown(
-    result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
-) -> str:
+def format_markdown(result: AnalysisResult, ctx: AnalysisContext, language: str = "en") -> str:
     """Format analysis result as a full Markdown report (for CLI export)."""
     t = _get_i18n(language)
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
@@ -119,7 +114,7 @@ def format_markdown(
 
     lines = [
         f"# {t['title']}",
-        f"",
+        "",
         f"**{t['repository']}:** {repo_name}",
         f"**{t['date']}:** {now}",
         f"**{t['workflows']}:** {len(ctx.workflow_files)} files",
@@ -217,9 +212,7 @@ def format_markdown(
     return "\n".join(lines)
 
 
-def format_json(
-    result: AnalysisResult, ctx: AnalysisContext, language: str = "en"
-) -> str:
+def format_json(result: AnalysisResult, ctx: AnalysisContext, language: str = "en") -> str:
     """Format analysis result as JSON."""
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
 

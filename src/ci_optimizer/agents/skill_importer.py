@@ -28,10 +28,9 @@ from pathlib import Path
 import yaml
 
 from ci_optimizer.agents.skill_registry import (
-    VALID_REQUIRES_DATA,
-    Skill,
-    SkillRegistry,
     _USER_DIR,
+    VALID_REQUIRES_DATA,
+    SkillRegistry,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,10 +109,7 @@ def _normalize_frontmatter(
     # Dimension: required by ci-agent, foreign formats don't have it
     dim = dimension or meta.get("dimension")
     if not dim:
-        raise SkillImportError(
-            "ci-agent requires a 'dimension' field. Pass --dimension or add "
-            "one to the source SKILL.md frontmatter."
-        )
+        raise SkillImportError("ci-agent requires a 'dimension' field. Pass --dimension or add one to the source SKILL.md frontmatter.")
     out["dimension"] = str(dim)
 
     # Tools: Claude Code uses 'allowed-tools', ci-agent uses 'tools'
@@ -133,10 +129,7 @@ def _normalize_frontmatter(
         rd = [x.strip() for x in rd.split(",") if x.strip()]
     invalid = set(rd) - VALID_REQUIRES_DATA
     if invalid:
-        raise SkillImportError(
-            f"Invalid requires_data values: {invalid}. "
-            f"Valid options: {sorted(VALID_REQUIRES_DATA)}"
-        )
+        raise SkillImportError(f"Invalid requires_data values: {invalid}. Valid options: {sorted(VALID_REQUIRES_DATA)}")
     out["requires_data"] = list(rd)
 
     # Optional: priority, enabled
@@ -192,10 +185,7 @@ def import_from_path(
     target_skill_dir = target_root / dir_name
 
     if target_skill_dir.exists():
-        raise SkillImportError(
-            f"Target already exists: {target_skill_dir}. "
-            f"Remove it first or use a different --name."
-        )
+        raise SkillImportError(f"Target already exists: {target_skill_dir}. Remove it first or use a different --name.")
 
     # Copy any companion files (README, hooks.py, etc.) verbatim
     target_skill_dir.mkdir(parents=True)
@@ -237,10 +227,7 @@ def import_from_claude_code(
     """Import a skill from ~/.claude/skills/<name>/."""
     src = CLAUDE_CODE_SKILLS_DIR / name
     if not src.is_dir():
-        raise SkillImportError(
-            f"Claude Code skill not found: {src}. "
-            f"Check available skills with: ls {CLAUDE_CODE_SKILLS_DIR}"
-        )
+        raise SkillImportError(f"Claude Code skill not found: {src}. Check available skills with: ls {CLAUDE_CODE_SKILLS_DIR}")
     return import_from_path(
         src,
         dimension=dimension,
@@ -259,10 +246,7 @@ def import_from_opencode(
     """Import a skill from ~/.config/opencode/skills/<name>/."""
     src = OPENCODE_SKILLS_DIR / name
     if not src.is_dir():
-        raise SkillImportError(
-            f"OpenCode skill not found: {src}. "
-            f"Check available skills with: ls {OPENCODE_SKILLS_DIR}"
-        )
+        raise SkillImportError(f"OpenCode skill not found: {src}. Check available skills with: ls {OPENCODE_SKILLS_DIR}")
     return import_from_path(
         src,
         dimension=dimension,

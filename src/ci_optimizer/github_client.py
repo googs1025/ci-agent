@@ -1,8 +1,8 @@
 """GitHub REST API client for fetching CI run data."""
 
+import asyncio
 import io
 import os
-import asyncio
 import zipfile
 from datetime import datetime, timezone
 
@@ -85,8 +85,7 @@ class GitHubClient:
                 params["status"] = filters.status[0]
             if filters.time_range:
                 params["created"] = (
-                    f"{filters.time_range[0].strftime('%Y-%m-%dT%H:%M:%SZ')}"
-                    f"..{filters.time_range[1].strftime('%Y-%m-%dT%H:%M:%SZ')}"
+                    f"{filters.time_range[0].strftime('%Y-%m-%dT%H:%M:%SZ')}..{filters.time_range[1].strftime('%Y-%m-%dT%H:%M:%SZ')}"
                 )
 
         data = await self._request("GET", f"/repos/{owner}/{repo}/actions/runs", params=params)
@@ -95,19 +94,15 @@ class GitHubClient:
         # Apply client-side filters that GitHub API doesn't support directly
         if filters:
             if filters.workflows:
-                runs = [r for r in runs if r.get("name") in filters.workflows
-                        or r.get("path", "").split("/")[-1] in filters.workflows]
+                runs = [r for r in runs if r.get("name") in filters.workflows or r.get("path", "").split("/")[-1] in filters.workflows]
             if filters.branches and len(filters.branches) > 1:
                 runs = [r for r in runs if r.get("head_branch") in filters.branches]
             if filters.status and len(filters.status) > 1:
-                runs = [r for r in runs if r.get("conclusion") in filters.status
-                        or r.get("status") in filters.status]
+                runs = [r for r in runs if r.get("conclusion") in filters.status or r.get("status") in filters.status]
 
         return runs
 
-    async def get_run_jobs(
-        self, owner: str, repo: str, run_id: int, filter: str = "latest"
-    ) -> list[dict]:
+    async def get_run_jobs(self, owner: str, repo: str, run_id: int, filter: str = "latest") -> list[dict]:
         """Get jobs for a specific workflow run.
 
         Args:
@@ -120,9 +115,7 @@ class GitHubClient:
         )
         return data.get("jobs", [])
 
-    async def get_run_logs(
-        self, owner: str, repo: str, run_id: int, max_lines: int = 2000
-    ) -> str | None:
+    async def get_run_logs(self, owner: str, repo: str, run_id: int, max_lines: int = 2000) -> str | None:
         """Download and extract failure logs for a run. Returns truncated log text."""
         client = await self._get_client()
         try:
@@ -162,14 +155,10 @@ class GitHubClient:
         data = await self._request("GET", f"/repos/{owner}/{repo}/actions/workflows")
         return data.get("workflows", [])
 
-    async def get_workflow_timing(
-        self, owner: str, repo: str, run_id: int
-    ) -> dict | None:
+    async def get_workflow_timing(self, owner: str, repo: str, run_id: int) -> dict | None:
         """Get timing/billing info for a workflow run."""
         try:
-            data = await self._request(
-                "GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}/timing"
-            )
+            data = await self._request("GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}/timing")
             return data
         except httpx.HTTPStatusError:
             return None
@@ -185,9 +174,7 @@ class GitHubClient:
         """
         for ref_path in [f"tags/{ref}", f"heads/{ref}"]:
             try:
-                data = await self._request(
-                    "GET", f"/repos/{owner}/{repo}/git/ref/{ref_path}"
-                )
+                data = await self._request("GET", f"/repos/{owner}/{repo}/git/ref/{ref_path}")
                 obj = data.get("object", {})
                 # Annotated tags point to a tag object — follow to the commit
                 if obj.get("type") == "tag":

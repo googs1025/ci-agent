@@ -1,18 +1,16 @@
 """Tests for resolver module."""
 
-import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ci_optimizer.resolver import (
-    is_github_url,
-    is_github_shorthand,
-    parse_github_url,
     detect_github_remote,
+    is_github_shorthand,
+    is_github_url,
+    parse_github_url,
     resolve_input,
-    ResolvedInput,
 )
 
 

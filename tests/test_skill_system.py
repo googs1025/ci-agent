@@ -3,7 +3,7 @@
 import textwrap
 from pathlib import Path
 
-from ci_optimizer.agents.skill_registry import SkillRegistry, _BUILTIN_DIR
+from ci_optimizer.agents.skill_registry import _BUILTIN_DIR, SkillRegistry
 
 
 class TestSkillSystemIntegration:
@@ -32,7 +32,8 @@ class TestSkillSystemIntegration:
         user_dir = tmp_path / "user_skills"
         rel_dir = user_dir / "reliability"
         rel_dir.mkdir(parents=True)
-        (rel_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (rel_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: reliability-analyst
             description: Reliability analysis
@@ -43,7 +44,8 @@ class TestSkillSystemIntegration:
             ---
 
             Analyze reliability.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=_BUILTIN_DIR, user_dir=user_dir)
         registry.load()
@@ -61,7 +63,7 @@ class TestSkillSystemIntegration:
         skills = registry.get_active_skills()
         required = registry.collect_required_data(skills)
 
-        assert required == {"workflows", "jobs", "logs", "usage_stats"}
+        assert required == {"workflows", "jobs", "logs", "usage_stats", "action_shas"}
 
     def test_select_single_skill_reduces_data(self):
         """Selecting only security should only require workflows."""
@@ -71,7 +73,7 @@ class TestSkillSystemIntegration:
 
         assert len(skills) == 1
         required = registry.collect_required_data(skills)
-        assert required == {"workflows"}
+        assert required == {"workflows", "action_shas"}
 
     def test_skill_to_agent_definition(self):
         """Skill.to_agent_definition produces valid AgentDefinition."""

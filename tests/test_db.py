@@ -3,14 +3,14 @@
 import pytest
 
 from ci_optimizer.db.crud import (
-    get_or_create_repo,
-    create_report,
     complete_report,
+    create_report,
     fail_report,
+    get_dashboard_stats,
+    get_or_create_repo,
     get_report,
     list_reports,
     list_repositories,
-    get_dashboard_stats,
 )
 
 
@@ -47,9 +47,7 @@ class TestCreateReport:
     @pytest.mark.asyncio
     async def test_creates_report_with_filters(self, db_session):
         repo = await get_or_create_repo(db_session, "octocat", "hello-world")
-        report = await create_report(
-            db_session, repo.id, filters_json='{"branches": ["main"]}'
-        )
+        report = await create_report(db_session, repo.id, filters_json='{"branches": ["main"]}')
         assert report.filters_json == '{"branches": ["main"]}'
 
 
@@ -99,17 +97,20 @@ class TestCompleteReport:
 
         report = await create_report(db_session, repo.id)
         await complete_report(
-            db_session, report.id,
-            summary_md="done", full_report_json="{}",
-            findings_data=[], duration_ms=1000,
+            db_session,
+            report.id,
+            summary_md="done",
+            full_report_json="{}",
+            findings_data=[],
+            duration_ms=1000,
         )
 
         # Refresh repo
         from sqlalchemy import select
+
         from ci_optimizer.db.models import Repository
-        result = await db_session.execute(
-            select(Repository).where(Repository.id == repo.id)
-        )
+
+        result = await db_session.execute(select(Repository).where(Repository.id == repo.id))
         updated_repo = result.scalar_one()
         assert updated_repo.last_analyzed_at is not None
 
@@ -138,8 +139,10 @@ class TestGetReport:
         repo = await get_or_create_repo(db_session, "octocat", "hello-world")
         report = await create_report(db_session, repo.id)
         await complete_report(
-            db_session, report.id,
-            summary_md="test", full_report_json="{}",
+            db_session,
+            report.id,
+            summary_md="test",
+            full_report_json="{}",
             findings_data=[
                 {"dimension": "efficiency", "severity": "minor", "title": "Test", "description": "desc"},
             ],
@@ -213,8 +216,10 @@ class TestGetDashboardStats:
         repo = await get_or_create_repo(db_session, "octocat", "hello-world")
         report = await create_report(db_session, repo.id)
         await complete_report(
-            db_session, report.id,
-            summary_md="test", full_report_json="{}",
+            db_session,
+            report.id,
+            summary_md="test",
+            full_report_json="{}",
             findings_data=[
                 {"dimension": "efficiency", "severity": "major", "title": "A", "description": "a"},
                 {"dimension": "security", "severity": "critical", "title": "B", "description": "b"},

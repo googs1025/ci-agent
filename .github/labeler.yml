@@ -1,0 +1,35 @@
+# PR auto-labeler rules — maps file paths to labels
+# Docs: https://github.com/actions/labeler
+
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/**"
+          - "tests/**"
+          - "pyproject.toml"
+          - "Dockerfile.backend"
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "web/**"
+          - "Dockerfile.frontend"
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "deploy/**"
+          - "docker-compose.yaml"
+          - "Dockerfile.*"
+          - ".github/**"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+
+skills:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "skills/**"

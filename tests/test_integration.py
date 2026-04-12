@@ -15,12 +15,12 @@ import os
 
 import pytest
 
+from ci_optimizer.agents.orchestrator import AnalysisResult
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.github_client import GitHubClient
-from ci_optimizer.prefetch import prepare_context, _compute_usage_stats
-from ci_optimizer.report.formatter import format_markdown, format_json
-from ci_optimizer.agents.orchestrator import AnalysisResult
-from ci_optimizer.resolver import resolve_input, ResolvedInput
+from ci_optimizer.prefetch import prepare_context
+from ci_optimizer.report.formatter import format_json, format_markdown
+from ci_optimizer.resolver import resolve_input
 
 OWNER = "kubernetes-sigs"
 REPO = "descheduler"
@@ -184,7 +184,7 @@ class TestPrefetchReal:
             assert ctx.usage_stats_json_path.exists()
             usage = json.loads(ctx.usage_stats_json_path.read_text())
 
-            print(f"\n--- Usage Stats ---")
+            print("\n--- Usage Stats ---")
             print(f"Total runs: {usage['total_runs']}")
             print(f"Total jobs: {usage['total_jobs']}")
             print(f"Conclusions: {usage['conclusion_counts']}")
@@ -199,21 +199,23 @@ class TestPrefetchReal:
             assert usage["timing"]["avg_job_duration_ms"] > 0
 
             # Per-workflow stats
-            print(f"\nPer-workflow stats:")
+            print("\nPer-workflow stats:")
             for wf_name, ws in usage["per_workflow"].items():
                 print(f"  {wf_name}: {ws['total_runs']} runs, {ws['success_rate']}% success, avg {ws['avg_duration_ms']}ms")
             assert len(usage["per_workflow"]) > 0
 
             # Per-job stats
-            print(f"\nPer-job stats (top 5):")
+            print("\nPer-job stats (top 5):")
             for i, (jn, js) in enumerate(usage["per_job"].items()):
                 if i >= 5:
                     break
-                print(f"  {jn}: {js['total_runs']} runs, {js['success_rate']}% success, avg {js['avg_duration_ms']}ms, queue {js['avg_queue_wait_ms']}ms")
+                print(
+                    f"  {jn}: {js['total_runs']} runs, {js['success_rate']}% success, avg {js['avg_duration_ms']}ms, queue {js['avg_queue_wait_ms']}ms"
+                )
 
             # Slowest steps
             if usage["slowest_steps"]:
-                print(f"\nSlowest steps (top 5):")
+                print("\nSlowest steps (top 5):")
                 for s in usage["slowest_steps"][:5]:
                     print(f"  {s['step']} ({s['job']}): {s['duration_ms']}ms")
 
@@ -226,7 +228,16 @@ class TestPrefetchReal:
             # Verify we can generate a report from this data
             mock_result = AnalysisResult(
                 executive_summary="Integration test summary",
-                findings=[{"dimension": "efficiency", "severity": "info", "title": "Test", "description": "Integration test", "file": "ci.yml", "suggestion": "N/A"}],
+                findings=[
+                    {
+                        "dimension": "efficiency",
+                        "severity": "info",
+                        "title": "Test",
+                        "description": "Integration test",
+                        "file": "ci.yml",
+                        "suggestion": "N/A",
+                    }
+                ],
                 stats={"total_findings": 1, "critical": 0, "major": 0, "minor": 0, "info": 1},
                 duration_ms=1000,
             )
@@ -243,10 +254,10 @@ class TestPrefetchReal:
             # Cleanup cloned repo
             if resolved.temp_dir:
                 import shutil
+
                 shutil.rmtree(resolved.temp_dir, ignore_errors=True)
             # Cleanup temp files
-            for attr in ["runs_json_path", "jobs_json_path", "usage_stats_json_path",
-                         "logs_json_path", "workflows_json_path"]:
+            for attr in ["runs_json_path", "jobs_json_path", "usage_stats_json_path", "logs_json_path", "workflows_json_path"]:
                 p = getattr(ctx, attr, None) if "ctx" in dir() else None
                 if p and p.exists():
                     p.unlink(missing_ok=True)
