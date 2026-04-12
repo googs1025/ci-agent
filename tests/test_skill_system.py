@@ -63,7 +63,7 @@ class TestSkillSystemIntegration:
         skills = registry.get_active_skills()
         required = registry.collect_required_data(skills)
 
-        assert required == {"workflows", "jobs", "logs", "usage_stats"}
+        assert required == {"workflows", "jobs", "logs", "usage_stats", "action_shas"}
 
     def test_select_single_skill_reduces_data(self):
         """Selecting only security should only require workflows."""
