@@ -130,9 +130,7 @@ class SkillRegistry:
             errors.append(f"unknown requires_data: {invalid}")
         return errors
 
-    def get_active_skills(
-        self, selected: list[str] | None = None
-    ) -> list[Skill]:
+    def get_active_skills(self, selected: list[str] | None = None) -> list[Skill]:
         """Return enabled skills, optionally filtered by dimension names."""
         skills = [s for s in self._skills.values() if s.enabled]
         if selected:
@@ -155,18 +153,9 @@ class SkillRegistry:
 
     def build_orchestrator_prompt(self, skills: list[Skill]) -> str:
         """Dynamically generate orchestrator prompt from active skills."""
-        dim_list = "\n".join(
-            f"{i+1}. **{s.dimension}**: {s.description}"
-            for i, s in enumerate(skills)
-        )
-        agent_list = "\n".join(
-            f"   - **{s.name}**: {s.description}"
-            for s in skills
-        )
-        dim_schema = "\n".join(
-            f'    "{s.dimension}": {{ "findings": [...] }},'
-            for s in skills
-        )
+        dim_list = "\n".join(f"{i + 1}. **{s.dimension}**: {s.description}" for i, s in enumerate(skills))
+        agent_list = "\n".join(f"   - **{s.name}**: {s.description}" for s in skills)
+        dim_schema = "\n".join(f'    "{s.dimension}": {{ "findings": [...] }},' for s in skills)
 
         return (
             "You are a CI pipeline analysis orchestrator. Your role is to "

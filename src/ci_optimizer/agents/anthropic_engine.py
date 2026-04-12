@@ -53,18 +53,13 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
         if filter_desc:
             parts.append(f"\nApplied filters: {json.dumps(filter_desc)}")
 
-    parts.append(
-        "\nPlease dispatch all specialist agents to analyze these files, "
-        "then produce the unified report."
-    )
+    parts.append("\nPlease dispatch all specialist agents to analyze these files, then produce the unified report.")
     parts.append(LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"]))
 
     return "\n".join(parts)
 
 
-async def run_analysis_anthropic(
-    ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]"
-) -> "AnalysisResult":
+async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":
     """Run analysis using Claude Agent SDK with dynamically loaded skills."""
     from ci_optimizer.agents.orchestrator import AnalysisResult
     from ci_optimizer.agents.skill_registry import SkillRegistry
@@ -132,6 +127,7 @@ async def run_analysis_anthropic(
         raise RuntimeError("Agent returned empty analysis result")
 
     from ci_optimizer.agents.orchestrator import _parse_result
+
     dim_to_skill = {s.dimension: s.name for s in skills}
     summary, findings, stats = _parse_result(result.raw_report, dim_to_skill)
     result.executive_summary = summary

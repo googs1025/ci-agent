@@ -100,8 +100,7 @@ def parse_args():
     )
     skills_import.add_argument(
         "--requires-data",
-        help="Comma-separated data deps (default: workflows). "
-             "Valid: workflows,runs,jobs,logs,usage_stats,action_shas",
+        help="Comma-separated data deps (default: workflows). Valid: workflows,runs,jobs,logs,usage_stats,action_shas",
     )
     skills_import.add_argument(
         "--name",
@@ -242,8 +241,7 @@ async def run_analyze(args):
         print(output)
 
     print(
-        f"\nAnalysis complete: {result.stats.get('total_findings', 0)} findings "
-        f"in {result.duration_ms / 1000:.1f}s",
+        f"\nAnalysis complete: {result.stats.get('total_findings', 0)} findings in {result.duration_ms / 1000:.1f}s",
         file=sys.stderr,
     )
 
@@ -384,7 +382,9 @@ def _validate_skill_path(path: Path) -> int:
         print(f"Validated {len(candidates)} skill{'s' if len(candidates) != 1 else ''} — all OK")
         return 0
     else:
-        print(f"Validated {len(candidates)} skill{'s' if len(candidates) != 1 else ''}, {total_errors} error{'s' if total_errors != 1 else ''}")
+        print(
+            f"Validated {len(candidates)} skill{'s' if len(candidates) != 1 else ''}, {total_errors} error{'s' if total_errors != 1 else ''}"
+        )
         return 1
 
 

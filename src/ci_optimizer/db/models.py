@@ -13,9 +13,7 @@ class Base(DeclarativeBase):
 
 class Repository(Base):
     __tablename__ = "repositories"
-    __table_args__ = (
-        sqlalchemy.UniqueConstraint("owner", "repo", name="uq_owner_repo"),
-    )
+    __table_args__ = (sqlalchemy.UniqueConstraint("owner", "repo", name="uq_owner_repo"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner: Mapped[str]

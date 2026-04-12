@@ -209,7 +209,9 @@ class TestPrefetchReal:
             for i, (jn, js) in enumerate(usage["per_job"].items()):
                 if i >= 5:
                     break
-                print(f"  {jn}: {js['total_runs']} runs, {js['success_rate']}% success, avg {js['avg_duration_ms']}ms, queue {js['avg_queue_wait_ms']}ms")
+                print(
+                    f"  {jn}: {js['total_runs']} runs, {js['success_rate']}% success, avg {js['avg_duration_ms']}ms, queue {js['avg_queue_wait_ms']}ms"
+                )
 
             # Slowest steps
             if usage["slowest_steps"]:
@@ -226,7 +228,16 @@ class TestPrefetchReal:
             # Verify we can generate a report from this data
             mock_result = AnalysisResult(
                 executive_summary="Integration test summary",
-                findings=[{"dimension": "efficiency", "severity": "info", "title": "Test", "description": "Integration test", "file": "ci.yml", "suggestion": "N/A"}],
+                findings=[
+                    {
+                        "dimension": "efficiency",
+                        "severity": "info",
+                        "title": "Test",
+                        "description": "Integration test",
+                        "file": "ci.yml",
+                        "suggestion": "N/A",
+                    }
+                ],
                 stats={"total_findings": 1, "critical": 0, "major": 0, "minor": 0, "info": 1},
                 duration_ms=1000,
             )
@@ -243,10 +254,10 @@ class TestPrefetchReal:
             # Cleanup cloned repo
             if resolved.temp_dir:
                 import shutil
+
                 shutil.rmtree(resolved.temp_dir, ignore_errors=True)
             # Cleanup temp files
-            for attr in ["runs_json_path", "jobs_json_path", "usage_stats_json_path",
-                         "logs_json_path", "workflows_json_path"]:
+            for attr in ["runs_json_path", "jobs_json_path", "usage_stats_json_path", "logs_json_path", "workflows_json_path"]:
                 p = getattr(ctx, attr, None) if "ctx" in dir() else None
                 if p and p.exists():
                     p.unlink(missing_ok=True)

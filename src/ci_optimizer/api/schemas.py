@@ -115,6 +115,7 @@ class RepositorySchema(BaseModel):
 
 class SkillSchema(BaseModel):
     """Skill definition exposed via API."""
+
     name: str
     description: str
     dimension: str
@@ -128,6 +129,7 @@ class SkillSchema(BaseModel):
 
 class SkillImportRequest(BaseModel):
     """Request body for POST /skills/import."""
+
     source_type: Literal["claude-code", "opencode", "path", "github"]
     source: str  # skill name (claude-code/opencode), dir path, or repo URL
     dimension: str

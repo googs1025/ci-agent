@@ -52,4 +52,3 @@ Severity guide:
 - minor: Small improvement (5-20%)
 - info: Best practice suggestion
 """
-

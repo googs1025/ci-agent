@@ -32,7 +32,8 @@ class TestSkillSystemIntegration:
         user_dir = tmp_path / "user_skills"
         rel_dir = user_dir / "reliability"
         rel_dir.mkdir(parents=True)
-        (rel_dir / "SKILL.md").write_text(textwrap.dedent("""\
+        (rel_dir / "SKILL.md").write_text(
+            textwrap.dedent("""\
             ---
             name: reliability-analyst
             description: Reliability analysis
@@ -43,7 +44,8 @@ class TestSkillSystemIntegration:
             ---
 
             Analyze reliability.
-        """))
+        """)
+        )
 
         registry = SkillRegistry(builtin_dir=_BUILTIN_DIR, user_dir=user_dir)
         registry.load()

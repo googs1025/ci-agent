@@ -78,8 +78,20 @@ class TestComputeUsageStats:
 
     def test_basic_stats(self):
         runs = [
-            {"id": 1, "name": "CI", "conclusion": "success", "run_started_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:10:00Z"},
-            {"id": 2, "name": "CI", "conclusion": "failure", "run_started_at": "2024-01-01T01:00:00Z", "updated_at": "2024-01-01T01:05:00Z"},
+            {
+                "id": 1,
+                "name": "CI",
+                "conclusion": "success",
+                "run_started_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:10:00Z",
+            },
+            {
+                "id": 2,
+                "name": "CI",
+                "conclusion": "failure",
+                "run_started_at": "2024-01-01T01:00:00Z",
+                "updated_at": "2024-01-01T01:05:00Z",
+            },
         ]
         all_jobs = {
             "1": [
@@ -91,7 +103,12 @@ class TestComputeUsageStats:
                     "started_at": "2024-01-01T00:00:10Z",
                     "completed_at": "2024-01-01T00:05:00Z",
                     "steps": [
-                        {"name": "Run tests", "conclusion": "success", "started_at": "2024-01-01T00:01:00Z", "completed_at": "2024-01-01T00:04:00Z"},
+                        {
+                            "name": "Run tests",
+                            "conclusion": "success",
+                            "started_at": "2024-01-01T00:01:00Z",
+                            "completed_at": "2024-01-01T00:04:00Z",
+                        },
                     ],
                 }
             ],
@@ -165,9 +182,24 @@ class TestComputeUsageStats:
                     "started_at": "2024-01-01T00:00:00Z",
                     "completed_at": "2024-01-01T00:10:00Z",
                     "steps": [
-                        {"name": "Checkout", "conclusion": "success", "started_at": "2024-01-01T00:00:00Z", "completed_at": "2024-01-01T00:00:05Z"},
-                        {"name": "Install deps", "conclusion": "success", "started_at": "2024-01-01T00:00:05Z", "completed_at": "2024-01-01T00:03:00Z"},
-                        {"name": "Build", "conclusion": "success", "started_at": "2024-01-01T00:03:00Z", "completed_at": "2024-01-01T00:09:00Z"},
+                        {
+                            "name": "Checkout",
+                            "conclusion": "success",
+                            "started_at": "2024-01-01T00:00:00Z",
+                            "completed_at": "2024-01-01T00:00:05Z",
+                        },
+                        {
+                            "name": "Install deps",
+                            "conclusion": "success",
+                            "started_at": "2024-01-01T00:00:05Z",
+                            "completed_at": "2024-01-01T00:03:00Z",
+                        },
+                        {
+                            "name": "Build",
+                            "conclusion": "success",
+                            "started_at": "2024-01-01T00:03:00Z",
+                            "completed_at": "2024-01-01T00:09:00Z",
+                        },
                     ],
                 }
             ],
@@ -210,14 +242,24 @@ class TestPrepareContext:
     @pytest.mark.asyncio
     async def test_with_github_info_fetches_all_jobs(self, tmp_repo):
         """When owner/repo is set, jobs are fetched for ALL runs."""
-        resolved = ResolvedInput(
-            local_path=tmp_repo, owner="octocat", repo="hello-world"
-        )
+        resolved = ResolvedInput(local_path=tmp_repo, owner="octocat", repo="hello-world")
 
         mock_client = AsyncMock()
         mock_client.list_workflow_runs.return_value = [
-            {"id": 1, "conclusion": "success", "name": "CI", "run_started_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:05:00Z"},
-            {"id": 2, "conclusion": "failure", "name": "CI", "run_started_at": "2024-01-01T01:00:00Z", "updated_at": "2024-01-01T01:03:00Z"},
+            {
+                "id": 1,
+                "conclusion": "success",
+                "name": "CI",
+                "run_started_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:05:00Z",
+            },
+            {
+                "id": 2,
+                "conclusion": "failure",
+                "name": "CI",
+                "run_started_at": "2024-01-01T01:00:00Z",
+                "updated_at": "2024-01-01T01:03:00Z",
+            },
         ]
         mock_client.get_run_jobs.return_value = [
             {
@@ -232,14 +274,19 @@ class TestPrepareContext:
                 "runner_name": "runner-1",
                 "labels": ["ubuntu-latest"],
                 "steps": [
-                    {"name": "Run tests", "status": "completed", "conclusion": "success", "number": 1, "started_at": "2024-01-01T00:01:00Z", "completed_at": "2024-01-01T00:04:00Z"},
+                    {
+                        "name": "Run tests",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "number": 1,
+                        "started_at": "2024-01-01T00:01:00Z",
+                        "completed_at": "2024-01-01T00:04:00Z",
+                    },
                 ],
             }
         ]
         mock_client.get_run_logs.return_value = "Error: test failed"
-        mock_client.get_workflows.return_value = [
-            {"id": 1, "name": "CI", "path": ".github/workflows/ci.yml"}
-        ]
+        mock_client.get_workflows.return_value = [{"id": 1, "name": "CI", "path": ".github/workflows/ci.yml"}]
         mock_client.get_repo_info.return_value = {
             "full_name": "octocat/hello-world",
             "private": False,
@@ -274,8 +321,7 @@ class TestPrepareContext:
         assert usage_data["billing_estimate"]["total_minutes"] > 0
 
         # Cleanup
-        for p in [ctx.runs_json_path, ctx.jobs_json_path, ctx.usage_stats_json_path,
-                   ctx.logs_json_path, ctx.workflows_json_path]:
+        for p in [ctx.runs_json_path, ctx.jobs_json_path, ctx.usage_stats_json_path, ctx.logs_json_path, ctx.workflows_json_path]:
             if p:
                 p.unlink(missing_ok=True)
 

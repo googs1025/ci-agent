@@ -20,9 +20,11 @@ class TestAgentConfig:
 
     def test_save_and_load(self, tmp_path):
         config_file = tmp_path / "config.json"
-        with patch("ci_optimizer.config.CONFIG_FILE", config_file), \
-             patch("ci_optimizer.config.CONFIG_DIR", tmp_path), \
-             patch.dict(os.environ, {}, clear=True):
+        with (
+            patch("ci_optimizer.config.CONFIG_FILE", config_file),
+            patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
+            patch.dict(os.environ, {}, clear=True),
+        ):
             config = AgentConfig(
                 model="claude-opus-4-20250514",
                 anthropic_api_key="sk-test-key",
@@ -44,26 +46,37 @@ class TestAgentConfig:
 
     def test_env_overrides_file(self, tmp_path):
         config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "model": "from-file",
-            "anthropic_api_key": "from-file-key",
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "model": "from-file",
+                    "anthropic_api_key": "from-file-key",
+                }
+            )
+        )
 
-        with patch("ci_optimizer.config.CONFIG_FILE", config_file), \
-             patch("ci_optimizer.config.CONFIG_DIR", tmp_path), \
-             patch.dict(os.environ, {
-                 "ANTHROPIC_API_KEY": "from-env-key",
-                 "CI_AGENT_MODEL": "from-env-model",
-             }):
+        with (
+            patch("ci_optimizer.config.CONFIG_FILE", config_file),
+            patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
+            patch.dict(
+                os.environ,
+                {
+                    "ANTHROPIC_API_KEY": "from-env-key",
+                    "CI_AGENT_MODEL": "from-env-model",
+                },
+            ),
+        ):
             config = AgentConfig.load()
             assert config.anthropic_api_key == "from-env-key"  # env wins
             assert config.model == "from-env-model"  # env wins
 
     def test_load_no_config_file(self, tmp_path):
         config_file = tmp_path / "nonexistent.json"
-        with patch("ci_optimizer.config.CONFIG_FILE", config_file), \
-             patch("ci_optimizer.config.CONFIG_DIR", tmp_path), \
-             patch.dict(os.environ, {}, clear=True):
+        with (
+            patch("ci_optimizer.config.CONFIG_FILE", config_file),
+            patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
+            patch.dict(os.environ, {}, clear=True),
+        ):
             config = AgentConfig.load()
             assert config.model == DEFAULT_MODEL
 
@@ -96,8 +109,7 @@ class TestAgentConfig:
 
     def test_save_omits_none(self, tmp_path):
         config_file = tmp_path / "config.json"
-        with patch("ci_optimizer.config.CONFIG_FILE", config_file), \
-             patch("ci_optimizer.config.CONFIG_DIR", tmp_path):
+        with patch("ci_optimizer.config.CONFIG_FILE", config_file), patch("ci_optimizer.config.CONFIG_DIR", tmp_path):
             config = AgentConfig(model="test-model")
             config.save()
 
@@ -116,11 +128,13 @@ class TestAgentConfigApi:
 
     @pytest.mark.asyncio
     async def test_update_config(self, client, tmp_path):
-        with patch("ci_optimizer.config.CONFIG_FILE", tmp_path / "config.json"), \
-             patch("ci_optimizer.config.CONFIG_DIR", tmp_path):
-            resp = await client.put("/api/config", json={
-                "model": "claude-opus-4-20250514",
-            })
+        with patch("ci_optimizer.config.CONFIG_FILE", tmp_path / "config.json"), patch("ci_optimizer.config.CONFIG_DIR", tmp_path):
+            resp = await client.put(
+                "/api/config",
+                json={
+                    "model": "claude-opus-4-20250514",
+                },
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["model"] == "claude-opus-4-20250514"

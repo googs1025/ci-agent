@@ -6,14 +6,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-GITHUB_URL_PATTERN = re.compile(
-    r"(?:https?://)?github\.com/([^/]+)/([^/\s.]+?)(?:\.git)?/?$"
-)
+GITHUB_URL_PATTERN = re.compile(r"(?:https?://)?github\.com/([^/]+)/([^/\s.]+?)(?:\.git)?/?$")
 
 # Matches "owner/repo" shorthand (no slashes beyond the one separator, no spaces)
-GITHUB_SHORTHAND_PATTERN = re.compile(
-    r"^([a-zA-Z0-9\-_.]+)/([a-zA-Z0-9\-_.]+)$"
-)
+GITHUB_SHORTHAND_PATTERN = re.compile(r"^([a-zA-Z0-9\-_.]+)/([a-zA-Z0-9\-_.]+)$")
 
 
 @dataclass

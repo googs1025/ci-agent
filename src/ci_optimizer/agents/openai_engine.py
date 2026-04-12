@@ -100,9 +100,7 @@ async def _call_specialist(
     return "".join(collected)
 
 
-async def run_analysis_openai(
-    ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]"
-) -> "AnalysisResult":
+async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":
     """Run analysis using OpenAI-compatible API with parallel specialist calls."""
     start_time = time.time()
 
@@ -132,8 +130,7 @@ async def _run_analysis_with_client(
 
     # Step 1: Run all specialists in parallel, each with its own context
     logger.info(
-        f"Starting {len(skills)} specialist analyses with model={model}, language={language}, "
-        f"skills={[s.dimension for s in skills]}"
+        f"Starting {len(skills)} specialist analyses with model={model}, language={language}, skills={[s.dimension for s in skills]}"
     )
 
     async def _run_specialist(skill: "Skill") -> tuple[str, str]:
@@ -144,16 +141,20 @@ async def _run_analysis_with_client(
             return skill.dimension, result
         except Exception as e:
             logger.error(f"Specialist {skill.dimension} failed: {e}")
-            return skill.dimension, json.dumps({
-                "findings": [{
-                    "severity": "info",
-                    "title": f"Analysis failed for {skill.dimension}",
-                    "description": str(e),
-                    "file": "",
-                    "suggestion": "Check API configuration",
-                    "impact": "N/A",
-                }]
-            })
+            return skill.dimension, json.dumps(
+                {
+                    "findings": [
+                        {
+                            "severity": "info",
+                            "title": f"Analysis failed for {skill.dimension}",
+                            "description": str(e),
+                            "file": "",
+                            "suggestion": "Check API configuration",
+                            "impact": "N/A",
+                        }
+                    ]
+                }
+            )
 
     results = await asyncio.gather(*[_run_specialist(s) for s in skills])
     specialist_results = dict(results)
@@ -163,15 +164,11 @@ async def _run_analysis_with_client(
     orchestrator_prompt = registry.build_orchestrator_prompt(skills)
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
     synthesis_prompt = (
-        orchestrator_prompt + lang_instruction +
-        "\n\nSynthesize the following specialist reports into a unified analysis. "
+        orchestrator_prompt + lang_instruction + "\n\nSynthesize the following specialist reports into a unified analysis. "
         "Output ONLY the JSON object described above."
     )
 
-    specialist_summary = "\n\n".join(
-        f"=== {dim.upper()} ANALYST REPORT ===\n{report}"
-        for dim, report in specialist_results.items()
-    )
+    specialist_summary = "\n\n".join(f"=== {dim.upper()} ANALYST REPORT ===\n{report}" for dim, report in specialist_results.items())
 
     logger.info(f"Synthesizing {len(specialist_results)} specialist reports ({len(specialist_summary)} chars)")
 

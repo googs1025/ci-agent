@@ -1,6 +1,5 @@
 """Tests for GitHub client with mocked HTTP responses."""
 
-
 import httpx
 import pytest
 
@@ -88,8 +87,22 @@ async def test_list_workflow_runs_with_branch_filter(client_with_transport):
         {
             "total_count": 2,
             "workflow_runs": [
-                {"id": 1, "head_branch": "main", "name": "CI", "path": ".github/workflows/ci.yml", "conclusion": "success", "status": "completed"},
-                {"id": 2, "head_branch": "feature", "name": "CI", "path": ".github/workflows/ci.yml", "conclusion": "success", "status": "completed"},
+                {
+                    "id": 1,
+                    "head_branch": "main",
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "conclusion": "success",
+                    "status": "completed",
+                },
+                {
+                    "id": 2,
+                    "head_branch": "feature",
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "conclusion": "success",
+                    "status": "completed",
+                },
             ],
         },
     )
@@ -111,8 +124,22 @@ async def test_list_workflow_runs_with_workflow_filter(client_with_transport):
         {
             "total_count": 2,
             "workflow_runs": [
-                {"id": 1, "name": "CI", "path": ".github/workflows/ci.yml", "head_branch": "main", "conclusion": "success", "status": "completed"},
-                {"id": 2, "name": "Deploy", "path": ".github/workflows/deploy.yml", "head_branch": "main", "conclusion": "success", "status": "completed"},
+                {
+                    "id": 1,
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "head_branch": "main",
+                    "conclusion": "success",
+                    "status": "completed",
+                },
+                {
+                    "id": 2,
+                    "name": "Deploy",
+                    "path": ".github/workflows/deploy.yml",
+                    "head_branch": "main",
+                    "conclusion": "success",
+                    "status": "completed",
+                },
             ],
         },
     )
@@ -133,9 +160,30 @@ async def test_list_workflow_runs_with_status_filter(client_with_transport):
         {
             "total_count": 3,
             "workflow_runs": [
-                {"id": 1, "conclusion": "success", "status": "completed", "name": "CI", "path": ".github/workflows/ci.yml", "head_branch": "main"},
-                {"id": 2, "conclusion": "failure", "status": "completed", "name": "CI", "path": ".github/workflows/ci.yml", "head_branch": "main"},
-                {"id": 3, "conclusion": "cancelled", "status": "completed", "name": "CI", "path": ".github/workflows/ci.yml", "head_branch": "main"},
+                {
+                    "id": 1,
+                    "conclusion": "success",
+                    "status": "completed",
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "head_branch": "main",
+                },
+                {
+                    "id": 2,
+                    "conclusion": "failure",
+                    "status": "completed",
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "head_branch": "main",
+                },
+                {
+                    "id": 3,
+                    "conclusion": "cancelled",
+                    "status": "completed",
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "head_branch": "main",
+                },
             ],
         },
     )

@@ -29,6 +29,7 @@ def _try_parse_json(raw_text: str) -> dict | None:
 
     # Strategy 2: JSON inside markdown code fence
     import re
+
     fence_match = re.search(r"```(?:json)?\s*\n(\{[\s\S]*?\})\s*\n```", raw_text)
     if fence_match:
         try:
@@ -62,7 +63,6 @@ def _parse_result(
     try:
         data = _try_parse_json(raw_text)
         if data:
-
             summary = data.get("executive_summary", "")
             # Handle case where summary is a list of bullet points
             if isinstance(summary, list):
@@ -111,6 +111,7 @@ async def run_analysis(
         config = AgentConfig.load()
 
     from ci_optimizer.agents.skill_registry import get_registry
+
     registry = get_registry()
     skills = registry.get_active_skills(selected=selected_skills)
 
@@ -119,7 +120,9 @@ async def run_analysis(
 
     if config.provider == "openai":
         from ci_optimizer.agents.openai_engine import run_analysis_openai
+
         return await run_analysis_openai(ctx, config, skills)
     else:
         from ci_optimizer.agents.anthropic_engine import run_analysis_anthropic
+
         return await run_analysis_anthropic(ctx, config, skills)
