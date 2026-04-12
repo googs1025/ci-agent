@@ -19,12 +19,15 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ci-agent-frontend:latest         # Replace with your registry
-          imagePullPolicy: IfNotPresent
+          image: ci-agent-frontend:v0.1.0         # Replace with your registry/tag
+          imagePullPolicy: Always                 # Always pull; use specific tags, not latest
           ports:
             - containerPort: 3000
               name: http
           env:
+            # NOTE: Next.js rewrites() are baked at BUILD time via --build-arg NEXT_PUBLIC_API_URL.
+            # This runtime env is used only by SSR server code for direct backend calls.
+            # Build the image with: --build-arg NEXT_PUBLIC_API_URL=http://ci-agent-backend:8000
             - name: NEXT_PUBLIC_API_URL
               value: "http://ci-agent-backend:8000"
           resources:

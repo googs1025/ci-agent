@@ -21,8 +21,8 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ci-agent-backend:latest          # Replace with your registry
-          imagePullPolicy: IfNotPresent
+          image: ci-agent-backend:v0.1.0          # Replace with your registry/tag
+          imagePullPolicy: Always                 # Always pull; use specific tags, not latest
           ports:
             - containerPort: 8000
               name: http
@@ -37,10 +37,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: "1"
               memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi              # LLM analysis is memory-intensive
           readinessProbe:
             httpGet:
               path: /health

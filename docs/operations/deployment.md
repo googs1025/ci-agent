@@ -114,7 +114,12 @@ REGISTRY=your-registry.com/ci-agent
 VERSION=v0.1.0
 
 docker build -f Dockerfile.backend -t $REGISTRY/backend:$VERSION .
-docker build -f Dockerfile.frontend -t $REGISTRY/frontend:$VERSION .
+
+# ⚠️ frontend 必须在构建时传入 NEXT_PUBLIC_API_URL
+# Next.js 的 /api/* rewrite 目标地址在 build 时 bake 进镜像，运行时不可更改
+docker build -f Dockerfile.frontend \
+  --build-arg NEXT_PUBLIC_API_URL=http://ci-agent-backend:8000 \
+  -t $REGISTRY/frontend:$VERSION .
 
 docker push $REGISTRY/backend:$VERSION
 docker push $REGISTRY/frontend:$VERSION

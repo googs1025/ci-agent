@@ -1,0 +1,37 @@
+# Version control
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist
+build
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Node / frontend (only needed for frontend image build)
+web/node_modules
+web/.next
+web/test-results
+web/playwright-report
+
+# Local config & secrets
+.env
+.env.*
+!.env.example
+
+# Docs & screenshots (not needed in image)
+docs/
+
+# Editor
+.idea
+.vscode
+*.swp
+*.swo
