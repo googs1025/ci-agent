@@ -1,0 +1,24 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-assets:
+    name: Build & Upload Release Assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package K8s manifests
+        run: tar czf ci-agent-k8s-manifests-${{ github.ref_name }}.tar.gz -C deploy k8s/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ci-agent-k8s-manifests-${{ github.ref_name }}.tar.gz
