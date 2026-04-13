@@ -3,6 +3,8 @@
 import json
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+
+from ci_optimizer.api.auth import verify_api_key
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
@@ -36,7 +38,7 @@ from ci_optimizer.prefetch import prepare_context
 from ci_optimizer.report.formatter import format_json, format_summary_markdown
 from ci_optimizer.resolver import resolve_input
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 async def get_db():
