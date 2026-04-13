@@ -4,7 +4,7 @@ kind: Kustomization
 namespace: ci-agent
 
 resources:
-  - ../../
+  - ../../deploy/k8s
 
 # Use :ci tagged images built in GitHub Actions
 images:
@@ -16,7 +16,7 @@ images:
     newTag: ci
 
 patches:
-  # Use local images (no registry pull) — same as minikube overlay
+  # Use local images (no registry pull) — required for kind
   - patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy

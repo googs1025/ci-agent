@@ -247,7 +247,7 @@ jobs:
 
       - name: Deploy to kind
         run: |
-          kustomize build deploy/k8s/overlays/ci | kubectl apply -f -
+          kustomize build .github/k8s-ci | kubectl apply -f -
 
       - name: Wait for deployments ready
         run: |
