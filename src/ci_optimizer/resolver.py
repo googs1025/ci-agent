@@ -1,6 +1,7 @@
 """Input resolver: detect local path vs GitHub URL and extract repo info."""
 
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -73,16 +74,29 @@ def detect_github_remote(local_path: Path) -> tuple[str, str] | None:
     return None
 
 
-def clone_repo(url: str) -> tuple[Path, str]:
+def clone_repo(url: str, timeout: int = 120) -> tuple[Path, str]:
     """Shallow clone a GitHub repo to a temp directory. Returns (path, temp_dir)."""
     temp_dir = tempfile.mkdtemp(prefix="ci-agent-")
-    subprocess.run(
-        ["git", "clone", "--depth=1", url, temp_dir],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=True,
-    )
+    try:
+        subprocess.run(
+            ["git", "clone", "--depth=1", url, temp_dir],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=True,
+        )
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"Repository clone timed out after {timeout}s. "
+            "The repository may be too large or the network is slow. "
+            "Try using a local path instead."
+        )
+    except subprocess.CalledProcessError as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"Failed to clone repository: {e.stderr or e.stdout or str(e)}"
+        )
     return Path(temp_dir), temp_dir
 
 
