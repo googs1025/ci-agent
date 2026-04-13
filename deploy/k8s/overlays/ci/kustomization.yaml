@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ci-agent
+
+resources:
+  - ../minikube
+
+# Use :ci tagged images built in GitHub Actions
+images:
+  - name: ci-agent-backend:v0.1.0
+    newName: ci-agent-backend
+    newTag: ci
+  - name: ci-agent-frontend:v0.1.0
+    newName: ci-agent-frontend
+    newTag: ci
+
+patches:
+  # Placeholder API keys for smoke test (no real AI calls made)
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: ci-agent-secrets
+        namespace: ci-agent
+      stringData:
+        ANTHROPIC_API_KEY: "sk-ant-test-placeholder"
+        GITHUB_TOKEN: "placeholder"
+  # CORS origin for local access
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ci-agent-config
+        namespace: ci-agent
+      data:
+        CORS_ORIGINS: "http://localhost:3000"
+  # Single frontend replica to reduce CI resource usage
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: ci-agent-frontend

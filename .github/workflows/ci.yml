@@ -244,54 +244,9 @@ jobs:
           kind load docker-image ci-agent-backend:ci --name ci-agent
           kind load docker-image ci-agent-frontend:ci --name ci-agent
 
-      - name: Patch kustomization for CI images
-        run: |
-          # Create a CI-specific overlay on top of minikube overlay
-          WORKSPACE="${{ github.workspace }}"
-          mkdir -p /tmp/k8s-ci
-          cat > /tmp/k8s-ci/kustomization.yaml <<EOF
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: ci-agent
-resources:
-  - ${WORKSPACE}/deploy/k8s/overlays/minikube
-images:
-  - name: ci-agent-backend:v0.1.0
-    newName: ci-agent-backend
-    newTag: ci
-  - name: ci-agent-frontend:v0.1.0
-    newName: ci-agent-frontend
-    newTag: ci
-patches:
-  - patch: |-
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: ci-agent-secrets
-        namespace: ci-agent
-      stringData:
-        ANTHROPIC_API_KEY: "sk-ant-test-placeholder"
-        GITHUB_TOKEN: "placeholder"
-  - patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ci-agent-config
-        namespace: ci-agent
-      data:
-        CORS_ORIGINS: "http://localhost:3000"
-  - patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-    target:
-      kind: Deployment
-      name: ci-agent-frontend
-EOF
-
       - name: Deploy to kind
         run: |
-          kustomize build /tmp/k8s-ci | kubectl apply -f -
+          kustomize build deploy/k8s/overlays/ci | kubectl apply -f -
 
       - name: Wait for deployments ready
         run: |
