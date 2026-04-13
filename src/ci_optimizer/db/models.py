@@ -31,6 +31,7 @@ class AnalysisReport(Base):
     repo_id: Mapped[int] = mapped_column(ForeignKey("repositories.id"))
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     filters_json: Mapped[str | None] = mapped_column(Text)
+    filters_hash: Mapped[str | None] = mapped_column(index=True)
     status: Mapped[str] = mapped_column(default="pending")  # pending/running/completed/failed
     summary_md: Mapped[str | None] = mapped_column(Text)
     full_report_json: Mapped[str | None] = mapped_column(Text)
