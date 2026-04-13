@@ -94,9 +94,7 @@ def clone_repo(url: str, timeout: int = 120) -> tuple[Path, str]:
         )
     except subprocess.CalledProcessError as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        raise RuntimeError(
-            f"Failed to clone repository: {e.stderr or e.stdout or str(e)}"
-        )
+        raise RuntimeError(f"Failed to clone repository: {e.stderr or e.stdout or str(e)}")
     return Path(temp_dir), temp_dir
 
 

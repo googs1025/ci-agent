@@ -47,9 +47,7 @@ class TestCloneRepoFailure:
     def test_called_process_error_raises_runtime_error(self):
         with patch(
             "ci_optimizer.resolver.subprocess.run",
-            side_effect=subprocess.CalledProcessError(
-                128, "git clone", stderr="fatal: repository not found"
-            ),
+            side_effect=subprocess.CalledProcessError(128, "git clone", stderr="fatal: repository not found"),
         ):
             with pytest.raises(RuntimeError, match="Failed to clone repository"):
                 clone_repo("https://github.com/owner/repo")
@@ -57,9 +55,7 @@ class TestCloneRepoFailure:
     def test_stderr_included_in_message(self):
         with patch(
             "ci_optimizer.resolver.subprocess.run",
-            side_effect=subprocess.CalledProcessError(
-                128, "git clone", stderr="fatal: repository not found"
-            ),
+            side_effect=subprocess.CalledProcessError(128, "git clone", stderr="fatal: repository not found"),
         ):
             with pytest.raises(RuntimeError, match="repository not found"):
                 clone_repo("https://github.com/owner/repo")
@@ -90,7 +86,9 @@ class TestWorkflowFileLimit:
 
         # Create more workflow files than the limit
         for i in range(MAX_WORKFLOW_FILES + 5):
-            (workflows_dir / f"wf-{i:03d}.yml").write_text(f"name: Workflow {i}\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n")
+            (workflows_dir / f"wf-{i:03d}.yml").write_text(
+                f"name: Workflow {i}\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+            )
 
         resolved = ResolvedInput(local_path=tmp_path)
         ctx = await prepare_context(resolved)

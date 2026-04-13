@@ -323,8 +323,7 @@ async def prepare_context(
     if len(ctx.workflow_files) > MAX_WORKFLOW_FILES:
         total = len(ctx.workflow_files)
         logger.warning(
-            "Repository has %d workflow files, limiting to %d. "
-            "Some workflows will not be analyzed.",
+            "Repository has %d workflow files, limiting to %d. Some workflows will not be analyzed.",
             total,
             MAX_WORKFLOW_FILES,
         )
