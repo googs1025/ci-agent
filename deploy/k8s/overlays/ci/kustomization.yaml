@@ -4,7 +4,7 @@ kind: Kustomization
 namespace: ci-agent
 
 resources:
-  - ../minikube
+  - ../../
 
 # Use :ci tagged images built in GitHub Actions
 images:
@@ -16,6 +16,21 @@ images:
     newTag: ci
 
 patches:
+  # Use local images (no registry pull) — same as minikube overlay
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+    target:
+      kind: Deployment
+      name: ci-agent-backend
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+    target:
+      kind: Deployment
+      name: ci-agent-frontend
   # Placeholder API keys for smoke test (no real AI calls made)
   - patch: |-
       apiVersion: v1
