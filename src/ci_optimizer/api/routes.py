@@ -3,11 +3,10 @@
 import json
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-
-from ci_optimizer.api.auth import verify_api_key
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
+from ci_optimizer.api.auth import verify_api_key
 from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
     AgentConfigSchema,
     AnalyzeRequest,
