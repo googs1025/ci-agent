@@ -205,3 +205,142 @@ jobs:
                 --summary
             fi
           done
+
+  k8s-smoke-test:
+    name: K8s Deployment Smoke Test
+    runs-on: ubuntu-latest
+    needs: [docker-build, k8s-validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kind
+        run: |
+          curl -sSL https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64 -o /usr/local/bin/kind
+          chmod +x /usr/local/bin/kind
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v1.29.0
+
+      - name: Install kustomize
+        run: |
+          curl -sSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
+          mv kustomize /usr/local/bin/
+
+      - name: Build Docker images
+        run: |
+          docker build -f Dockerfile.backend -t ci-agent-backend:ci .
+          docker build -f Dockerfile.frontend \
+            --build-arg NEXT_PUBLIC_API_URL=http://ci-agent-backend:8000 \
+            -t ci-agent-frontend:ci .
+
+      - name: Create kind cluster
+        run: kind create cluster --name ci-agent --wait 60s
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image ci-agent-backend:ci --name ci-agent
+          kind load docker-image ci-agent-frontend:ci --name ci-agent
+
+      - name: Patch kustomization for CI images
+        run: |
+          # Create a CI-specific overlay on top of minikube overlay
+          WORKSPACE="${{ github.workspace }}"
+          mkdir -p /tmp/k8s-ci
+          cat > /tmp/k8s-ci/kustomization.yaml <<EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ci-agent
+resources:
+  - ${WORKSPACE}/deploy/k8s/overlays/minikube
+images:
+  - name: ci-agent-backend:v0.1.0
+    newName: ci-agent-backend
+    newTag: ci
+  - name: ci-agent-frontend:v0.1.0
+    newName: ci-agent-frontend
+    newTag: ci
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: ci-agent-secrets
+        namespace: ci-agent
+      stringData:
+        ANTHROPIC_API_KEY: "sk-ant-test-placeholder"
+        GITHUB_TOKEN: "placeholder"
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ci-agent-config
+        namespace: ci-agent
+      data:
+        CORS_ORIGINS: "http://localhost:3000"
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: ci-agent-frontend
+EOF
+
+      - name: Deploy to kind
+        run: |
+          kustomize build /tmp/k8s-ci | kubectl apply -f -
+
+      - name: Wait for deployments ready
+        run: |
+          kubectl rollout status deployment/ci-agent-backend -n ci-agent --timeout=120s
+          kubectl rollout status deployment/ci-agent-frontend -n ci-agent --timeout=120s
+
+      - name: Verify backend health via port-forward
+        run: |
+          kubectl port-forward svc/ci-agent-backend 18000:8000 -n ci-agent &
+          PF_PID=$!
+          sleep 5
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:18000/health; then
+              echo "Backend healthy"
+              break
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 3
+          done
+          curl -sf http://localhost:18000/health | grep '"status":"ok"'
+          curl -sf http://localhost:18000/api/dashboard | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); assert 'repo_count' in d"
+          curl -sf http://localhost:18000/api/skills | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); assert isinstance(d, list)"
+          kill $PF_PID
+
+      - name: Verify frontend via port-forward
+        run: |
+          kubectl port-forward svc/ci-agent-frontend 13000:3000 -n ci-agent &
+          PF_PID=$!
+          sleep 5
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:13000/ > /dev/null; then
+              echo "Frontend healthy"
+              break
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 3
+          done
+          curl -sf -o /dev/null -w "%{http_code}" http://localhost:13000/ | grep -E "^(200|304)$"
+          kill $PF_PID
+
+      - name: Show pod status on failure
+        if: failure()
+        run: |
+          kubectl get pods -n ci-agent -o wide
+          kubectl describe pods -n ci-agent
+          kubectl logs -n ci-agent -l app.kubernetes.io/name=backend --tail=100 || true
+          kubectl logs -n ci-agent -l app.kubernetes.io/name=frontend --tail=50 || true
+
+      - name: Delete kind cluster
+        if: always()
+        run: kind delete cluster --name ci-agent
