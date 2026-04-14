@@ -127,6 +127,42 @@ export interface DashboardData {
 }
 
 // ──────────────────────────────────────────────────────────
+// Trends
+// ──────────────────────────────────────────────────────────
+
+export interface DailySeverityPoint {
+  date: string;
+  total: number;
+  critical: number;
+  major: number;
+  minor: number;
+  info: number;
+}
+
+export interface DimensionTrendPoint {
+  date: string;
+  efficiency: number;
+  security: number;
+  cost: number;
+  errors: number;
+}
+
+export interface RepoComparisonItem {
+  repo: string;
+  total: number;
+  critical: number;
+  major: number;
+  minor: number;
+  info: number;
+}
+
+export interface TrendsData {
+  daily_scores: DailySeverityPoint[];
+  dimension_trends: DimensionTrendPoint[];
+  repo_comparison: RepoComparisonItem[];
+}
+
+// ──────────────────────────────────────────────────────────
 // Repository
 // ──────────────────────────────────────────────────────────
 

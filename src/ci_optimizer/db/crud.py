@@ -3,7 +3,7 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import String, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -189,4 +189,138 @@ async def get_dashboard_stats(session: AsyncSession) -> dict:
         "severity_distribution": dict(severity_result.all()),
         "dimension_distribution": dict(dimension_result.all()),
         "recent_reports": list(recent_result.scalars().all()),
+    }
+
+
+async def get_dashboard_trends(
+    session: AsyncSession,
+    days: int = 30,
+    repo: str | None = None,
+) -> dict:
+    """Return time-series trend data for dashboard charts.
+
+    Returns:
+        - daily_scores: per-day finding counts by severity
+        - dimension_trends: per-day finding counts by dimension
+        - repo_comparison: per-repo finding counts for latest analysis
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Base filter: completed reports within time range
+    base_filter = [
+        AnalysisReport.status == "completed",
+        AnalysisReport.created_at >= cutoff,
+    ]
+    if repo:
+        parts = repo.split("/", 1)
+        if len(parts) == 2:
+            base_filter.append(Repository.owner == parts[0])
+            base_filter.append(Repository.repo == parts[1])
+
+    # SQLite date() for grouping by day
+    date_expr = func.date(AnalysisReport.created_at)
+
+    # ── Daily severity counts ──
+    daily_sev_stmt = (
+        select(
+            date_expr.label("date"),
+            func.count(Finding.id).label("total"),
+            func.sum(case((Finding.severity == "critical", 1), else_=0)).label("critical"),
+            func.sum(case((Finding.severity == "major", 1), else_=0)).label("major"),
+            func.sum(case((Finding.severity == "minor", 1), else_=0)).label("minor"),
+            func.sum(case((Finding.severity == "info", 1), else_=0)).label("info"),
+        )
+        .select_from(AnalysisReport)
+        .join(Repository, AnalysisReport.repo_id == Repository.id)
+        .join(Finding, Finding.report_id == AnalysisReport.id)
+        .where(*base_filter)
+        .group_by(date_expr)
+        .order_by(date_expr)
+    )
+    daily_sev_result = await session.execute(daily_sev_stmt)
+    daily_scores = [
+        {
+            "date": str(row.date),
+            "total": row.total,
+            "critical": row.critical,
+            "major": row.major,
+            "minor": row.minor,
+            "info": row.info,
+        }
+        for row in daily_sev_result.all()
+    ]
+
+    # ── Daily dimension counts ──
+    daily_dim_stmt = (
+        select(
+            date_expr.label("date"),
+            func.sum(case((Finding.dimension == "efficiency", 1), else_=0)).label("efficiency"),
+            func.sum(case((Finding.dimension == "security", 1), else_=0)).label("security"),
+            func.sum(case((Finding.dimension == "cost", 1), else_=0)).label("cost"),
+            func.sum(case((Finding.dimension == "errors", 1), else_=0)).label("errors"),
+        )
+        .select_from(AnalysisReport)
+        .join(Repository, AnalysisReport.repo_id == Repository.id)
+        .join(Finding, Finding.report_id == AnalysisReport.id)
+        .where(*base_filter)
+        .group_by(date_expr)
+        .order_by(date_expr)
+    )
+    daily_dim_result = await session.execute(daily_dim_stmt)
+    dimension_trends = [
+        {
+            "date": str(row.date),
+            "efficiency": row.efficiency,
+            "security": row.security,
+            "cost": row.cost,
+            "errors": row.errors,
+        }
+        for row in daily_dim_result.all()
+    ]
+
+    # ── Repo comparison: total findings per repo (latest report each) ──
+    # Subquery: latest completed report per repo
+    latest_report_sub = (
+        select(
+            AnalysisReport.repo_id,
+            func.max(AnalysisReport.id).label("latest_id"),
+        )
+        .where(AnalysisReport.status == "completed", AnalysisReport.created_at >= cutoff)
+        .group_by(AnalysisReport.repo_id)
+        .subquery()
+    )
+
+    repo_cmp_stmt = (
+        select(
+            (Repository.owner + cast("/", String) + Repository.repo).label("repo_name"),
+            func.count(Finding.id).label("total"),
+            func.sum(case((Finding.severity == "critical", 1), else_=0)).label("critical"),
+            func.sum(case((Finding.severity == "major", 1), else_=0)).label("major"),
+            func.sum(case((Finding.severity == "minor", 1), else_=0)).label("minor"),
+            func.sum(case((Finding.severity == "info", 1), else_=0)).label("info"),
+        )
+        .select_from(latest_report_sub)
+        .join(AnalysisReport, AnalysisReport.id == latest_report_sub.c.latest_id)
+        .join(Repository, Repository.id == latest_report_sub.c.repo_id)
+        .join(Finding, Finding.report_id == AnalysisReport.id)
+        .group_by(Repository.owner, Repository.repo)
+        .order_by(func.count(Finding.id).desc())
+    )
+    repo_cmp_result = await session.execute(repo_cmp_stmt)
+    repo_comparison = [
+        {
+            "repo": row.repo_name,
+            "total": row.total,
+            "critical": row.critical,
+            "major": row.major,
+            "minor": row.minor,
+            "info": row.info,
+        }
+        for row in repo_cmp_result.all()
+    ]
+
+    return {
+        "daily_scores": daily_scores,
+        "dimension_trends": dimension_trends,
+        "repo_comparison": repo_comparison,
     }

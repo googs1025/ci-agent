@@ -151,3 +151,35 @@ class DashboardResponse(BaseModel):
     severity_distribution: dict[str, int]
     dimension_distribution: dict[str, int]
     recent_reports: list[ReportSummary]
+
+
+class DailySeverityPoint(BaseModel):
+    date: str
+    total: int
+    critical: int
+    major: int
+    minor: int
+    info: int
+
+
+class DimensionTrendPoint(BaseModel):
+    date: str
+    efficiency: int
+    security: int
+    cost: int
+    errors: int
+
+
+class RepoComparisonItem(BaseModel):
+    repo: str
+    total: int
+    critical: int
+    major: int
+    minor: int
+    info: int
+
+
+class TrendsResponse(BaseModel):
+    daily_scores: list[DailySeverityPoint]
+    dimension_trends: list[DimensionTrendPoint]
+    repo_comparison: list[RepoComparisonItem]

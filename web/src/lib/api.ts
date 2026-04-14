@@ -6,6 +6,7 @@ import type {
   ReportsListResponse,
   Repository,
   Skill,
+  TrendsData,
 } from '@/types';
 
 // When running in the browser the Next.js rewrite proxies /api/* → FastAPI.
@@ -93,6 +94,18 @@ export async function getReport(id: string): Promise<Report> {
  */
 export async function getDashboard(): Promise<DashboardData> {
   return request<DashboardData>('/api/dashboard');
+}
+
+/**
+ * Fetch dashboard trend data for charts.
+ */
+export async function getTrends(
+  days: number = 30,
+  repo?: string,
+): Promise<TrendsData> {
+  const params = new URLSearchParams({ days: String(days) });
+  if (repo) params.set('repo', repo);
+  return request<TrendsData>(`/api/dashboard/trends?${params.toString()}`);
 }
 
 /**
