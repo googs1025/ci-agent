@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from ci_optimizer.api.routes import router
+from ci_optimizer.api.webhooks import webhook_router
 from ci_optimizer.db.database import init_db
 
 load_dotenv()
@@ -64,6 +65,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(webhook_router)
 
 
 @app.get("/health", tags=["health"])

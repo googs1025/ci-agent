@@ -163,6 +163,17 @@ export interface TrendsData {
 }
 
 // ──────────────────────────────────────────────────────────
+// Webhook
+// ──────────────────────────────────────────────────────────
+
+export interface WebhookStatus {
+  enabled: boolean;
+  secret_configured: boolean;
+  webhook_url: string;
+  supported_events: string[];
+}
+
+// ──────────────────────────────────────────────────────────
 // Repository
 // ──────────────────────────────────────────────────────────
 
