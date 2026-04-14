@@ -1,5 +1,6 @@
 """CRUD operations for CI Agent database."""
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, cast, func, select, String
@@ -7,6 +8,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ci_optimizer.db.models import AnalysisReport, Finding, Repository
+
+
+def compute_filters_hash(filters_json: str | None) -> str:
+    """Return a short deterministic hash for the given filters JSON string."""
+    content = filters_json or ""
+    return hashlib.md5(content.encode()).hexdigest()[:12]
+
+
+async def find_cached_report(
+    session: AsyncSession,
+    repo_id: int,
+    filters_hash: str,
+    ttl_hours: int = 24,
+) -> AnalysisReport | None:
+    """Return the most recent completed report matching the cache key within TTL."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+    stmt = (
+        select(AnalysisReport)
+        .where(
+            AnalysisReport.repo_id == repo_id,
+            AnalysisReport.filters_hash == filters_hash,
+            AnalysisReport.status == "completed",
+            AnalysisReport.created_at >= cutoff,
+        )
+        .order_by(AnalysisReport.created_at.desc())
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def get_or_create_repo(session: AsyncSession, owner: str, repo: str, url: str | None = None) -> Repository:
@@ -24,10 +54,12 @@ async def create_report(
     session: AsyncSession,
     repo_id: int,
     filters_json: str | None = None,
+    filters_hash: str | None = None,
 ) -> AnalysisReport:
     report = AnalysisReport(
         repo_id=repo_id,
         filters_json=filters_json,
+        filters_hash=filters_hash,
         status="running",
     )
     session.add(report)

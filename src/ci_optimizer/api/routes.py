@@ -1,11 +1,13 @@
 """FastAPI route handlers."""
 
 import json
+import os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.orchestrator import run_analysis
+from ci_optimizer.api.auth import verify_api_key
 from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
     AgentConfigSchema,
     AnalyzeRequest,
@@ -23,8 +25,10 @@ from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.db.crud import (
     complete_report,
+    compute_filters_hash,
     create_report,
     fail_report,
+    find_cached_report,
     get_dashboard_stats,
     get_dashboard_trends,
     get_or_create_repo,
@@ -38,7 +42,7 @@ from ci_optimizer.prefetch import prepare_context
 from ci_optimizer.report.formatter import format_json, format_summary_markdown
 from ci_optimizer.resolver import resolve_input
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 async def get_db():
@@ -180,7 +184,15 @@ async def analyze(
     filters_json = json.dumps(filters.to_dict()) if filters else None
     config = _build_config_from_schema(request.agent_config)
 
-    report = await create_report(db, db_repo.id, filters_json)
+    # Check cache: reuse recent completed report for same repo+filters
+    fhash = compute_filters_hash(filters_json)
+    ttl = int(os.getenv("CI_AGENT_CACHE_TTL_HOURS", "24"))
+    if ttl > 0:
+        cached = await find_cached_report(db, db_repo.id, fhash, ttl)
+        if cached:
+            return {"report_id": cached.id, "status": "completed", "cached": True}
+
+    report = await create_report(db, db_repo.id, filters_json, filters_hash=fhash)
     await db.commit()
 
     background_tasks.add_task(_run_analysis_task, report.id, request.repo, filters, config, request.skills)

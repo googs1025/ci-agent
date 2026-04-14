@@ -16,18 +16,26 @@ const BASE_URL =
     ? (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000')
     : '';
 
+const API_KEY = process.env.NEXT_PUBLIC_CI_AGENT_API_KEY ?? '';
+
 async function request<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> ?? {}),
+  };
+
+  if (API_KEY) {
+    headers['Authorization'] = `Bearer ${API_KEY}`;
+  }
+
   const res = await fetch(url, {
     cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options?.headers ?? {}),
-    },
+    headers,
     ...options,
   });
 

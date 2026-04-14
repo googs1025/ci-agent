@@ -29,6 +29,7 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 # column exists), SQLite won't re-apply it thanks to the PRAGMA check.
 _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("findings", "skill_name", "ALTER TABLE findings ADD COLUMN skill_name TEXT"),
+    ("analysis_reports", "filters_hash", "ALTER TABLE analysis_reports ADD COLUMN filters_hash TEXT"),
 ]
 
 
