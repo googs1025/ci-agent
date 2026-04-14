@@ -138,6 +138,130 @@ class TestReportDetailEndpoint:
         assert data["findings"][0]["severity"] == "critical"
 
 
+class TestDashboardTrendsEndpoint:
+    @pytest.mark.asyncio
+    async def test_empty_trends(self, client):
+        resp = await client.get("/api/dashboard/trends?days=30")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["daily_scores"] == []
+        assert data["dimension_trends"] == []
+        assert data["repo_comparison"] == []
+
+    @pytest.mark.asyncio
+    async def test_trends_with_data(self, client, db_session):
+        repo = await get_or_create_repo(db_session, "octocat", "hello")
+        report = await create_report(db_session, repo.id)
+        await complete_report(
+            db_session,
+            report.id,
+            summary_md="test",
+            full_report_json="{}",
+            findings_data=[
+                {"dimension": "efficiency", "severity": "major", "title": "Slow", "description": "d"},
+                {"dimension": "security", "severity": "critical", "title": "Vuln", "description": "d"},
+                {"dimension": "security", "severity": "minor", "title": "Warn", "description": "d"},
+            ],
+            duration_ms=500,
+        )
+        await db_session.commit()
+
+        resp = await client.get("/api/dashboard/trends?days=30")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Should have one day of data
+        assert len(data["daily_scores"]) == 1
+        day = data["daily_scores"][0]
+        assert day["total"] == 3
+        assert day["critical"] == 1
+        assert day["major"] == 1
+        assert day["minor"] == 1
+        assert day["info"] == 0
+
+        # Dimension trends
+        assert len(data["dimension_trends"]) == 1
+        dim = data["dimension_trends"][0]
+        assert dim["efficiency"] == 1
+        assert dim["security"] == 2
+
+        # Repo comparison
+        assert len(data["repo_comparison"]) == 1
+        assert data["repo_comparison"][0]["repo"] == "octocat/hello"
+        assert data["repo_comparison"][0]["total"] == 3
+
+    @pytest.mark.asyncio
+    async def test_trends_invalid_days_defaults_to_30(self, client):
+        resp = await client.get("/api/dashboard/trends?days=15")
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_trends_valid_days(self, client):
+        for d in [7, 30, 90]:
+            resp = await client.get(f"/api/dashboard/trends?days={d}")
+            assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_trends_repo_filter(self, client, db_session):
+        repo1 = await get_or_create_repo(db_session, "owner1", "repo1")
+        repo2 = await get_or_create_repo(db_session, "owner2", "repo2")
+
+        r1 = await create_report(db_session, repo1.id)
+        await complete_report(
+            db_session, r1.id, "s", "{}",
+            [{"dimension": "cost", "severity": "info", "title": "T", "description": "d"}],
+            100,
+        )
+        r2 = await create_report(db_session, repo2.id)
+        await complete_report(
+            db_session, r2.id, "s", "{}",
+            [{"dimension": "errors", "severity": "major", "title": "T", "description": "d"}],
+            100,
+        )
+        await db_session.commit()
+
+        # Filter to repo1 only
+        resp = await client.get("/api/dashboard/trends?days=30&repo=owner1/repo1")
+        data = resp.json()
+        assert len(data["daily_scores"]) == 1
+        assert data["daily_scores"][0]["total"] == 1
+        # Repo comparison shows all repos (not filtered by subquery), but daily data is filtered
+        # Dimension should only show cost
+        assert data["dimension_trends"][0]["cost"] == 1
+        assert data["dimension_trends"][0]["errors"] == 0
+
+    @pytest.mark.asyncio
+    async def test_trends_multiple_repos_comparison(self, client, db_session):
+        repo1 = await get_or_create_repo(db_session, "org", "alpha")
+        repo2 = await get_or_create_repo(db_session, "org", "beta")
+
+        r1 = await create_report(db_session, repo1.id)
+        await complete_report(
+            db_session, r1.id, "s", "{}",
+            [
+                {"dimension": "security", "severity": "critical", "title": "T", "description": "d"},
+                {"dimension": "security", "severity": "major", "title": "T", "description": "d"},
+            ],
+            100,
+        )
+        r2 = await create_report(db_session, repo2.id)
+        await complete_report(
+            db_session, r2.id, "s", "{}",
+            [{"dimension": "cost", "severity": "info", "title": "T", "description": "d"}],
+            100,
+        )
+        await db_session.commit()
+
+        resp = await client.get("/api/dashboard/trends?days=30")
+        data = resp.json()
+        # repo_comparison sorted by total desc
+        assert len(data["repo_comparison"]) == 2
+        assert data["repo_comparison"][0]["repo"] == "org/alpha"
+        assert data["repo_comparison"][0]["total"] == 2
+        assert data["repo_comparison"][1]["repo"] == "org/beta"
+        assert data["repo_comparison"][1]["total"] == 1
+
+
 class TestRepositoriesEndpoint:
     @pytest.mark.asyncio
     async def test_empty(self, client):

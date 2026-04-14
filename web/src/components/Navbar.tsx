@@ -2,16 +2,18 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useLocale, type Lang } from '@/lib/locale';
 
-const navLinks = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/analyze', label: 'Analyze' },
-  { href: '/reports', label: 'Reports' },
-  { href: '/skills', label: 'Skills' },
+const navLinkKeys = [
+  { href: '/', key: 'nav.dashboard' },
+  { href: '/analyze', key: 'nav.analyze' },
+  { href: '/reports', key: 'nav.reports' },
+  { href: '/skills', key: 'nav.skills' },
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { lang, setLang, t } = useLocale();
 
   return (
     <header className="sticky top-0 z-50 bg-surface-card border-b border-surface-border backdrop-blur-sm">
@@ -91,28 +93,44 @@ export default function Navbar() {
             <span>CI Optimizer</span>
           </Link>
 
-          {/* Navigation links */}
-          <nav className="flex items-center gap-1" aria-label="Main navigation">
-            {navLinks.map(({ href, label }) => {
-              const isActive =
-                href === '/' ? pathname === '/' : pathname.startsWith(href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={[
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150',
-                    isActive
-                      ? 'bg-surface-elevated text-accent-blue'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-surface-elevated',
-                  ].join(' ')}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
+          {/* Navigation links + language toggle */}
+          <div className="flex items-center gap-3">
+            <nav className="flex items-center gap-1" aria-label="Main navigation">
+              {navLinkKeys.map(({ href, key }) => {
+                const isActive =
+                  href === '/' ? pathname === '/' : pathname.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={[
+                      'px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150',
+                      isActive
+                        ? 'bg-surface-elevated text-accent-blue'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-surface-elevated',
+                    ].join(' ')}
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    {t(key)}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* Language toggle */}
+            <button
+              onClick={() => setLang(lang === 'en' ? 'zh' : 'en')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-surface-elevated transition-colors border border-surface-border"
+              aria-label="Switch language"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
+                <ellipse cx="12" cy="12" rx="4" ry="10" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M2 12h20" stroke="currentColor" strokeWidth="1.5"/>
+              </svg>
+              {lang === 'en' ? '中文' : 'EN'}
+            </button>
+          </div>
         </div>
       </div>
     </header>

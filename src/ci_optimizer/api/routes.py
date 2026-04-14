@@ -18,6 +18,7 @@ from ci_optimizer.api.schemas import (  # noqa: E501 — many imports
     SkillImportRequest,
     SkillImportResponse,
     SkillSchema,
+    TrendsResponse,
 )
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.db.crud import (
@@ -25,6 +26,7 @@ from ci_optimizer.db.crud import (
     create_report,
     fail_report,
     get_dashboard_stats,
+    get_dashboard_trends,
     get_or_create_repo,
     get_report,
     list_reports,
@@ -281,6 +283,19 @@ async def dashboard(db: AsyncSession = Depends(get_db)):
             for r in stats["recent_reports"]
         ],
     )
+
+
+@router.get("/dashboard/trends", response_model=TrendsResponse)
+async def dashboard_trends(
+    days: int = 30,
+    repo: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get time-series trend data for dashboard charts."""
+    if days not in (7, 30, 90):
+        days = 30
+    data = await get_dashboard_trends(db, days=days, repo=repo)
+    return TrendsResponse(**data)
 
 
 @router.get("/config")
