@@ -9,6 +9,7 @@ const navLinkKeys = [
   { href: '/analyze', key: 'nav.analyze' },
   { href: '/reports', key: 'nav.reports' },
   { href: '/skills', key: 'nav.skills' },
+  { href: '/settings', key: 'nav.settings' },
 ];
 
 export default function Navbar() {

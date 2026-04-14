@@ -7,6 +7,7 @@ import type {
   Repository,
   Skill,
   TrendsData,
+  WebhookStatus,
 } from '@/types';
 
 // When running in the browser the Next.js rewrite proxies /api/* → FastAPI.
@@ -153,4 +154,11 @@ export async function deleteSkill(name: string): Promise<{ removed: string }> {
   return request<{ removed: string }>(`/api/skills/${encodeURIComponent(name)}`, {
     method: 'DELETE',
   });
+}
+
+/**
+ * Fetch webhook configuration status.
+ */
+export async function getWebhookStatus(): Promise<WebhookStatus> {
+  return request<WebhookStatus>('/api/webhooks/status');
 }
