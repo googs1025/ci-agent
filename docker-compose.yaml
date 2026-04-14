@@ -13,6 +13,7 @@ services:
       - CI_AGENT_BASE_URL=${CI_AGENT_BASE_URL:-}
       - CI_AGENT_LANGUAGE=${CI_AGENT_LANGUAGE:-en}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - CI_AGENT_API_KEY=${CI_AGENT_API_KEY:-}
       - CORS_ORIGINS=http://localhost:3000
     volumes:
       - ci-agent-data:/data/.ci-agent
@@ -35,6 +36,7 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_CI_AGENT_API_KEY=${CI_AGENT_API_KEY:-}
     depends_on:
       backend:
         condition: service_healthy
