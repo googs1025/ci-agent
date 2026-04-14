@@ -208,13 +208,19 @@ class TestDashboardTrendsEndpoint:
 
         r1 = await create_report(db_session, repo1.id)
         await complete_report(
-            db_session, r1.id, "s", "{}",
+            db_session,
+            r1.id,
+            "s",
+            "{}",
             [{"dimension": "cost", "severity": "info", "title": "T", "description": "d"}],
             100,
         )
         r2 = await create_report(db_session, repo2.id)
         await complete_report(
-            db_session, r2.id, "s", "{}",
+            db_session,
+            r2.id,
+            "s",
+            "{}",
             [{"dimension": "errors", "severity": "major", "title": "T", "description": "d"}],
             100,
         )
@@ -237,7 +243,10 @@ class TestDashboardTrendsEndpoint:
 
         r1 = await create_report(db_session, repo1.id)
         await complete_report(
-            db_session, r1.id, "s", "{}",
+            db_session,
+            r1.id,
+            "s",
+            "{}",
             [
                 {"dimension": "security", "severity": "critical", "title": "T", "description": "d"},
                 {"dimension": "security", "severity": "major", "title": "T", "description": "d"},
@@ -246,7 +255,10 @@ class TestDashboardTrendsEndpoint:
         )
         r2 = await create_report(db_session, repo2.id)
         await complete_report(
-            db_session, r2.id, "s", "{}",
+            db_session,
+            r2.id,
+            "s",
+            "{}",
             [{"dimension": "cost", "severity": "info", "title": "T", "description": "d"}],
             100,
         )
