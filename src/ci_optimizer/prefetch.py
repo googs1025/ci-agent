@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 # Max number of runs to fetch job details for (to avoid rate limiting)
 MAX_RUNS_FOR_JOBS = 20
 
+# Max number of workflow files to process (to avoid excessive analysis time)
+MAX_WORKFLOW_FILES = 20
+
 from ci_optimizer.filters import AnalysisFilters
 from ci_optimizer.github_client import GitHubClient
 from ci_optimizer.resolver import ResolvedInput
@@ -316,6 +319,15 @@ async def prepare_context(
     workflows_dir = resolved.local_path / ".github" / "workflows"
     if workflows_dir.exists():
         ctx.workflow_files = sorted(p for p in workflows_dir.iterdir() if p.suffix in (".yml", ".yaml"))
+
+    if len(ctx.workflow_files) > MAX_WORKFLOW_FILES:
+        total = len(ctx.workflow_files)
+        logger.warning(
+            "Repository has %d workflow files, limiting to %d. Some workflows will not be analyzed.",
+            total,
+            MAX_WORKFLOW_FILES,
+        )
+        ctx.workflow_files = ctx.workflow_files[:MAX_WORKFLOW_FILES]
 
     if not ctx.workflow_files:
         raise FileNotFoundError(
