@@ -2,7 +2,7 @@
 
 AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude) 和 OpenAI 双引擎。
 
-**快速上手** → [使用指南](docs/guides/usage-guide.md) | **完整文档** → [docs/](docs/README.md)
+**快速上手** → [使用指南 (中文)](docs/guides/zh/usage-guide.md) | [Usage Guide (EN)](docs/guides/en/usage-guide.md) | **完整文档** → [docs/](docs/README.md)
 
 ## Features
 
@@ -166,7 +166,7 @@ docker compose up -d
 # Backend:  http://localhost:8000
 ```
 
-详细部署文档见 [docs/operations/deployment.md](docs/operations/deployment.md)
+详细部署文档见 [部署指南 (中文)](docs/guides/zh/deployment.md) | [Deployment Guide (EN)](docs/guides/en/deployment.md)
 
 ## Tech Stack
 
@@ -183,7 +183,12 @@ docker compose up -d
 > 完整文档索引见 [docs/README.md](docs/README.md)
 
 ### 用户指南
-- [使用指南](docs/guides/usage-guide.md) — Dashboard、分析、报告、技能管理，含界面截图
+
+| 指南 | 中文 | English |
+|------|------|---------|
+| 使用指南 | [zh](docs/guides/zh/usage-guide.md) | [en](docs/guides/en/usage-guide.md) |
+| 部署指南（Docker / K8s） | [zh](docs/guides/zh/deployment.md) | [en](docs/guides/en/deployment.md) |
+| Langfuse 可观测性配置 | [zh](docs/guides/zh/langfuse-setup.md) | [en](docs/guides/en/langfuse-setup.md) |
 
 ### 架构设计
 - [系统架构](docs/design/architecture.md) — 整体架构与模块设计
@@ -191,7 +196,8 @@ docker compose up -d
 - [Webhook 设计](docs/design/webhook.md) — 实时 CI 用量追踪方案（草案）
 
 ### 运维部署
-- [部署文档](docs/operations/deployment.md) — Docker / Kubernetes 部署
+- [部署指南 (中文)](docs/guides/zh/deployment.md) — Docker / Kubernetes 部署
+- [Deployment Guide (EN)](docs/guides/en/deployment.md) — Docker / Kubernetes deployment
 
 ### 产品规划
 - [Roadmap](docs/roadmap.md) — 产品路线图
