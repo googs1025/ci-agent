@@ -3,6 +3,7 @@
 import json
 from dataclasses import dataclass, field
 
+from ci_optimizer.agents.tracing import langfuse_observe
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.prefetch import AnalysisContext
 
@@ -94,6 +95,7 @@ def _parse_result(
     return raw_text, [], {"total_findings": 0}
 
 
+@langfuse_observe(name="ci-analysis")
 async def run_analysis(
     ctx: AnalysisContext,
     config: AgentConfig | None = None,

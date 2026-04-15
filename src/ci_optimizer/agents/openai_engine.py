@@ -100,19 +100,27 @@ async def _call_specialist(
     return "".join(collected)
 
 
-async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":
+async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":  # noqa: E501
     """Run analysis using OpenAI-compatible API with parallel specialist calls."""
     start_time = time.time()
 
-    client = AsyncOpenAI(
-        api_key=config.openai_api_key,
-        base_url=config.base_url,
-    )
+    # Use Langfuse drop-in when tracing is enabled
+    from ci_optimizer.agents.tracing import is_enabled as _lf_enabled
+
+    if _lf_enabled():
+        from langfuse.openai import AsyncOpenAI as LfAsyncOpenAI
+
+        client = LfAsyncOpenAI(api_key=config.openai_api_key, base_url=config.base_url)
+    else:
+        client = AsyncOpenAI(api_key=config.openai_api_key, base_url=config.base_url)
 
     try:
         return await _run_analysis_with_client(client, ctx, config, start_time, skills)
     finally:
         await client.close()
+        from ci_optimizer.agents.tracing import flush
+
+        flush()
 
 
 async def _run_analysis_with_client(

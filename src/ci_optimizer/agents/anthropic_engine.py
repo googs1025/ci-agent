@@ -5,6 +5,9 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from ci_optimizer.agents.tracing import flush as _langfuse_flush
+from ci_optimizer.agents.tracing import langfuse_observe
+
 logger = logging.getLogger(__name__)
 
 from claude_agent_sdk import (
@@ -59,6 +62,7 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
     return "\n".join(parts)
 
 
+@langfuse_observe(name="anthropic-analysis")
 async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":
     """Run analysis using Claude Agent SDK with dynamically loaded skills."""
     from ci_optimizer.agents.orchestrator import AnalysisResult
@@ -134,4 +138,5 @@ async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skil
     result.findings = findings
     result.stats = stats
 
+    _langfuse_flush()
     return result

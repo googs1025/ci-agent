@@ -11,6 +11,7 @@ resources:
   - backend.yaml
   - frontend.yaml
   - ingress.yaml
+  - langfuse.yaml
 
 labels:
   - pairs:
