@@ -29,8 +29,20 @@ spec:
                 name: ci-agent-frontend
                 port:
                   number: 3000
+    # ── Langfuse UI (self-hosted) ──
+    - host: langfuse.example.com                   # Replace with your Langfuse domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: langfuse
+                port:
+                  number: 3000
   # Uncomment for TLS
   # tls:
   #   - hosts:
   #       - ci-agent.example.com
+  #       - langfuse.example.com
   #     secretName: ci-agent-tls
