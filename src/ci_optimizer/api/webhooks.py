@@ -18,10 +18,16 @@ webhook_router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
 @webhook_router.get("/status")
-async def webhook_status():
+async def webhook_status(request: Request):
     """Return webhook configuration status and usage instructions."""
     secret = os.getenv("WEBHOOK_SECRET", "")
-    base_url = os.getenv("CI_AGENT_BASE_URL", "http://localhost:8000")
+
+    # Build webhook URL from the incoming request so it matches the actual deployment
+    base_url = os.getenv("CI_AGENT_BASE_URL", "")
+    if not base_url:
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host", request.headers.get("host", "localhost:8000"))
+        base_url = f"{scheme}://{host}"
     webhook_url = f"{base_url}/api/webhooks/github"
 
     return {
