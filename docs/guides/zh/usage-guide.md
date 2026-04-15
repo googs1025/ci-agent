@@ -126,7 +126,7 @@ curl -H "Authorization: Bearer github_pat_xxx" https://api.github.com/user
 
 ## 1. Dashboard — 总览面板
 
-![Dashboard](../screenshots/01-dashboard.png)
+![Dashboard](../../screenshots/01-dashboard.png)
 
 Dashboard 提供 CI 分析的全局视图：
 
@@ -141,7 +141,7 @@ Dashboard 提供 CI 分析的全局视图：
 
 ## 2. Analyze — 启动分析
 
-![Analyze](../screenshots/02-analyze.png)
+![Analyze](../../screenshots/02-analyze.png)
 
 ### 使用步骤
 
@@ -180,7 +180,7 @@ Dashboard 提供 CI 分析的全局视图：
 
 ## 3. Reports — 报告列表
 
-![Reports List](../screenshots/03-reports-list.png)
+![Reports List](../../screenshots/03-reports-list.png)
 
 展示所有历史分析报告，包含：
 - 仓库名（可点击进入详情）
@@ -195,7 +195,7 @@ Dashboard 提供 CI 分析的全局视图：
 
 ## 4. Report Detail — 报告详情
 
-![Report Detail](../screenshots/04-report-detail.png)
+![Report Detail](../../screenshots/04-report-detail.png)
 
 报告详情采用**双栏布局**：
 
@@ -213,7 +213,7 @@ Dashboard 提供 CI 分析的全局视图：
 
 ### Finding 展开详情
 
-![Finding Expanded](../screenshots/05-finding-expanded.png)
+![Finding Expanded](../../screenshots/05-finding-expanded.png)
 
 点击任意 finding 行展开详细信息：
 
@@ -232,7 +232,7 @@ Dashboard 提供 CI 分析的全局视图：
 
 ## 5. Skills — 技能管理
 
-![Skills Page](../screenshots/06-skills.png)
+![Skills Page](../../screenshots/06-skills.png)
 
 Skills 页面展示所有已加载的分析技能（内置 + 用户安装），每个卡片显示：
 - 维度（颜色编码）
@@ -244,7 +244,7 @@ Skills 页面展示所有已加载的分析技能（内置 + 用户安装），�
 
 点击右上角 **+ Install Skill** 打开安装弹窗：
 
-![Install Modal](../screenshots/07-install-modal.png)
+![Install Modal](../../screenshots/07-install-modal.png)
 
 支持四种来源：
 
@@ -263,7 +263,7 @@ Skills 页面展示所有已加载的分析技能（内置 + 用户安装），�
 
 ### 查看技能详情
 
-![Skill Detail](../screenshots/08-skill-detail.png)
+![Skill Detail](../../screenshots/08-skill-detail.png)
 
 点击卡片打开右侧抽屉，显示完整信息：
 - 元数据（维度、来源、优先级、启用状态）

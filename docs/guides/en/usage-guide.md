@@ -126,7 +126,7 @@ curl -H "Authorization: Bearer github_pat_xxx" https://api.github.com/user
 
 ## 1. Dashboard
 
-![Dashboard](../screenshots/01-dashboard.png)
+![Dashboard](../../screenshots/01-dashboard.png)
 
 The Dashboard provides a global view of CI analysis:
 
@@ -141,7 +141,7 @@ The Dashboard provides a global view of CI analysis:
 
 ## 2. Analyze
 
-![Analyze](../screenshots/02-analyze.png)
+![Analyze](../../screenshots/02-analyze.png)
 
 ### Steps
 
@@ -180,7 +180,7 @@ The page automatically redirects to the report detail after analysis completes.
 
 ## 3. Reports
 
-![Reports List](../screenshots/03-reports-list.png)
+![Reports List](../../screenshots/03-reports-list.png)
 
 Displays all historical analysis reports, including:
 - Repository name (click to view details)
@@ -195,7 +195,7 @@ Supports paginated browsing.
 
 ## 4. Report Detail
 
-![Report Detail](../screenshots/04-report-detail.png)
+![Report Detail](../../screenshots/04-report-detail.png)
 
 The report detail uses a **two-column layout**:
 
@@ -213,7 +213,7 @@ The report detail uses a **two-column layout**:
 
 ### Expanded Finding Detail
 
-![Finding Expanded](../screenshots/05-finding-expanded.png)
+![Finding Expanded](../../screenshots/05-finding-expanded.png)
 
 Click any finding row to expand it:
 
@@ -232,7 +232,7 @@ Click any finding row to expand it:
 
 ## 5. Skills
 
-![Skills Page](../screenshots/06-skills.png)
+![Skills Page](../../screenshots/06-skills.png)
 
 The Skills page displays all loaded analysis skills (built-in + user-installed). Each card shows:
 - Dimension (color-coded)
@@ -244,7 +244,7 @@ The Skills page displays all loaded analysis skills (built-in + user-installed).
 
 Click **+ Install Skill** in the top right to open the install dialog:
 
-![Install Modal](../screenshots/07-install-modal.png)
+![Install Modal](../../screenshots/07-install-modal.png)
 
 Supports four sources:
 
@@ -263,7 +263,7 @@ After installation, the registry reloads automatically and the new skill is imme
 
 ### View Skill Details
 
-![Skill Detail](../screenshots/08-skill-detail.png)
+![Skill Detail](../../screenshots/08-skill-detail.png)
 
 Click a card to open the right-side drawer, which shows full information:
 - Metadata (dimension, source, priority, enabled status)
