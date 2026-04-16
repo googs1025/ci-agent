@@ -4,6 +4,17 @@
 > Depends on (v1+): [#36](https://github.com/googs1025/ci-agent/issues/36) — CI run metadata persistence
 > Related: [#32](https://github.com/googs1025/ci-agent/issues/32) failure detail page, [#33](https://github.com/googs1025/ci-agent/issues/33) category classification, [#34](https://github.com/googs1025/ci-agent/issues/34) reliability dashboard
 
+## Status
+
+**v0 · v1 · v2 all shipped** on `feat/failure-triage`. Open `/diagnose` in the
+web UI to use the feature end-to-end.
+
+| Phase | Status | Highlights |
+|-------|--------|------------|
+| v0 | ✅ shipped | `failure-triage` skill, log extractor, API, in-memory cache |
+| v1 | ✅ shipped | DB persistence, signature dedup, webhook auto-diagnose, daily budget |
+| v2 | ✅ shipped | `/diagnose` page, workflow grouping, URL state persistence |
+
 ## 1. Problem
 
 The existing `error-analyst` skill analyzes CI failures at the **repository-aggregate** level. Users still have no way to ask: **"Why did run #1234567 fail?"**
@@ -106,7 +117,19 @@ requires_data: []      # operates on passed-in excerpt, no prefetch
 
 **Few-shot strategy**: 3 examples covering flaky test, timeout, dependency failure.
 
-### 5.2 Log Extractor (`src/ci_optimizer/data/log_extractor.py`)
+### 5.2 Log Fetching — Per-Job, Not Whole-Run
+
+**Shipped behavior** (v0 path fixed post-v0):
+`GitHubClient.get_job_log(job_id)` fetches the log of the specific failing
+job via `/repos/{owner}/{repo}/actions/jobs/{job_id}/logs`. Falls back to
+`get_run_logs` (whole-run ZIP) if per-job fetch fails (e.g., log retention).
+
+**Why per-job**: the whole-run ZIP concatenates logs from every job. In
+repos where multiple jobs run in parallel, the LAST error anchor is often
+from an unrelated cleanup step in a different job, causing the LLM to see
+the wrong error and return `unknown` / null `quick_fix`.
+
+### 5.3 Log Extractor (`src/ci_optimizer/data/log_extractor.py`)
 
 ```python
 ERROR_ANCHORS = (
@@ -249,6 +272,59 @@ GET /api/diagnoses/by-signature/{sig}?days=30
 ```
 
 ## 7. v2 — Frontend Integration
+
+v2 **shipped as a standalone `/diagnose` page** rather than waiting on #32 so
+the feature is usable today. Components are designed for reuse — when the
+failure detail page (#32) lands, `FailureDiagnosisCard` drops in unchanged.
+
+### 7.0 Shipped UX (actual)
+
+The page has four distinct phases tracked by a single `Screen` state machine:
+
+```
+                 ┌─────────────────────────────────────┐
+                 │  ?repo=X&run_id=Y   (URL hydration) │
+                 └──────┬──────────────────────────────┘
+                        ▼
+     ┌──────── input ────────┐  enter owner/repo OR paste run URL
+     │                       │  → URL-paste shortcut skips picker
+     └──────────┬────────────┘
+                │
+                ▼
+     ┌──── loading-runs ─────┐  GET /api/repos/{}/{}/failed-runs
+     └──────────┬────────────┘
+                │
+                ▼
+     ┌────── picker ─────────┐  grouped by workflow, collapsible
+     │  ▼ CI · 12 failures   │  · First group open by default
+     │    ├─ #234567 main    │  · Single-run groups show inline button
+     │    ├─ #234566 feat/x  │  · Multi-run groups: [Diagnose latest]
+     │    └─ ...             │    or expand to pick specific run
+     │  ▶ Deploy · 3 failures│
+     └──────────┬────────────┘
+                │ click Diagnose
+                ▼
+     ┌──── diagnosing ───────┐  picker stays visible
+     │  (overlay on card)    │  previous result kept under semi-transparent
+     └──────────┬────────────┘  loading overlay (no blank flash)
+                │
+                ▼
+     ┌─── result (persist) ──┐  lastResult separate from Screen state
+     │  FailureDiagnosisCard │  → survives re-diagnose, refresh, URL share
+     └───────────────────────┘
+```
+
+Key interactions:
+- **URL sync**: every diagnosis writes `?repo=&run_id=&run_attempt=&tier=`
+  via `history.replaceState` — refresh restores the whole page
+- **State kept across refresh**: picker list is re-fetched; diagnosis hits
+  the backend DB cache (free, no LLM call)
+- **Shareable links**: URL alone is enough to restore the view — great for
+  pasting into Slack/PR comments
+- **Workflow grouping**: failures sharing a workflow name collapse into one
+  group with count + latest-failure summary
+- **Result persistence**: diagnosis card stays on screen while diagnosing
+  another run — old result hidden only when the new one arrives
 
 ### 7.1 Failure Detail Page (from #32)
 

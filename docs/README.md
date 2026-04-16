@@ -2,9 +2,11 @@
 
 ## 用户指南
 
-| 文档 | 说明 |
-|------|------|
-| [使用指南](guides/usage-guide.md) | Dashboard、分析、报告、技能管理的完整使用说明，含界面截图 |
+| 文档 | 中文 | English |
+|------|------|---------|
+| 使用指南 | [zh](guides/zh/usage-guide.md) | [en](guides/en/usage-guide.md) |
+| 部署指南 (Docker / K8s) | [zh](guides/zh/deployment.md) | [en](guides/en/deployment.md) |
+| Langfuse 可观测性 | [zh](guides/zh/langfuse-setup.md) | [en](guides/en/langfuse-setup.md) |
 
 ## 架构设计
 
@@ -13,12 +15,7 @@
 | [系统架构](design/architecture.md) | 整体架构、模块划分、数据流设计 |
 | [Skill 系统设计](design/skill-system.md) | 声明式 Skill 定义、动态发现、按需加载机制 |
 | [Webhook 设计](design/webhook.md) | GitHub Webhook 实时 CI 用量追踪技术方案（草案） |
-
-## 运维部署
-
-| 文档 | 说明 |
-|------|------|
-| [部署文档](operations/deployment.md) | Docker / Kubernetes 部署、环境变量配置 |
+| [Failure Triage 设计](design/failure-triage.md) | 单次失败 AI 诊断：skill 契约、DB 模型、成本控制、前端 UX |
 
 ## 产品规划
 
@@ -33,5 +30,5 @@
 
 ---
 
-> 快速上手请直接看 [使用指南](guides/usage-guide.md)。
+> 快速上手请直接看 [使用指南](guides/zh/usage-guide.md)。
 > 开发者了解系统架构请看 [系统架构](design/architecture.md)。

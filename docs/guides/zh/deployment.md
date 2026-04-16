@@ -290,6 +290,12 @@ kubectl -n ci-agent annotate ingress ci-agent-ingress \
 | `CI_AGENT_LANGUAGE` | `en` | 输出语言（`en` / `zh`） |
 | `CORS_ORIGINS` | — | 允许跨域的前端 URL，**必须更新** |
 | `LANGFUSE_HOST` | `http://langfuse:3000` | Langfuse 服务地址（留空禁用） |
+| `DIAGNOSE_DEFAULT_MODEL` | `claude-haiku-4-5-20251001` | 单次失败诊断默认模型（OpenAI 用户需覆盖） |
+| `DIAGNOSE_DEEP_MODEL` | `claude-sonnet-4-20250514` | Deep Analysis 模型 |
+| `DIAGNOSE_AUTO_ON_WEBHOOK` | `true` | Webhook 失败时自动触发诊断 |
+| `DIAGNOSE_SAMPLE_RATE` | `1.0` | 自动诊断采样率 0.0–1.0 |
+| `DIAGNOSE_BUDGET_USD_DAY` | `1.0` | 自动诊断日预算上限 |
+| `DIAGNOSE_SIGNATURE_TTL_HOURS` | `24` | 相同错误签名去重时间窗 |
 
 ### Secret（敏感）
 
