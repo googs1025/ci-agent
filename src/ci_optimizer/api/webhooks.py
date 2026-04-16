@@ -4,13 +4,19 @@ import hashlib
 import hmac
 import logging
 import os
+import random
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.api.routes import _run_analysis_task, get_db
 from ci_optimizer.config import AgentConfig
-from ci_optimizer.db.crud import create_report, get_or_create_repo
+from ci_optimizer.db.crud import (
+    create_report,
+    get_daily_diagnose_spend,
+    get_or_create_repo,
+)
+from ci_optimizer.db.database import async_session
 
 logger = logging.getLogger("ci_optimizer.webhook")
 
@@ -30,6 +36,61 @@ async def webhook_status():
         "webhook_url": webhook_url,
         "supported_events": ["workflow_run"],
     }
+
+
+async def _run_auto_diagnosis_task(
+    owner: str,
+    repo_name: str,
+    run_id: int,
+    run_attempt: int,
+    config: AgentConfig,
+) -> None:
+    """Background task: diagnose a failed webhook run.
+
+    Runs in its own session so we don't tie up the webhook request's session
+    past the 202 response. Swallows errors so a failing diagnosis never
+    poisons the surrounding analysis pipeline.
+    """
+    # Late import to break a circular dependency with diagnose.py.
+    from ci_optimizer.api.diagnose import run_diagnosis
+
+    try:
+        async with async_session() as db:
+            result = await run_diagnosis(
+                db,
+                owner=owner,
+                repo_name=repo_name,
+                run_id=run_id,
+                run_attempt=run_attempt,
+                tier="default",
+                source="webhook_auto",
+                config=config,
+            )
+            logger.info(
+                "auto-diagnose: %s/%s run=%d category=%s cost=%s",
+                owner,
+                repo_name,
+                run_id,
+                result.category,
+                result.cost_usd,
+            )
+    except Exception as e:
+        logger.warning("auto-diagnose failed for %s/%s run=%d: %s", owner, repo_name, run_id, e)
+
+
+async def _should_auto_diagnose(db: AsyncSession, config: AgentConfig) -> tuple[bool, str]:
+    """Decide whether to enqueue an auto-diagnosis for a failed webhook run.
+
+    Returns (should_run, reason). Reason is useful for logging/debugging.
+    """
+    if not config.diagnose_auto_on_webhook:
+        return False, "disabled"
+    if random.random() > config.diagnose_sample_rate:
+        return False, f"sampled-out (rate={config.diagnose_sample_rate})"
+    spend = await get_daily_diagnose_spend(db)
+    if spend >= config.diagnose_budget_usd_day:
+        return False, f"budget-exceeded (spend=${spend:.4f} >= ${config.diagnose_budget_usd_day})"
+    return True, "ok"
 
 
 def _verify_signature(payload: bytes, signature_header: str | None, secret: str) -> None:
@@ -81,6 +142,10 @@ async def github_webhook(
 
     event_type = request.headers.get("X-GitHub-Event", "")
 
+    # Track per-event auto-diagnosis intent so we can attach the task AFTER
+    # the db.commit() below (BackgroundTasks only run after response send).
+    auto_diag_target: dict | None = None
+
     # ── GitHub workflow_run event ──
     if event_type == "workflow_run":
         action = payload.get("action", "")
@@ -97,13 +162,26 @@ async def github_webhook(
 
         owner, repo_name = full_name.split("/", 1)
         repo_url = repo_data.get("html_url", f"https://github.com/{full_name}")
+        run_id_val = wf_run.get("id")
+        run_attempt_val = wf_run.get("run_attempt", 1)
+        run_conclusion = wf_run.get("conclusion", "")
 
         logger.info(
-            "Webhook received: workflow_run completed for %s (run_id=%s, branch=%s)",
+            "Webhook received: workflow_run completed for %s (run_id=%s, branch=%s, conclusion=%s)",
             full_name,
-            wf_run.get("id"),
+            run_id_val,
             wf_run.get("head_branch"),
+            run_conclusion,
         )
+
+        # Remember details for auto-diagnosis dispatch later
+        if run_conclusion == "failure" and isinstance(run_id_val, int):
+            auto_diag_target = {
+                "owner": owner,
+                "repo_name": repo_name,
+                "run_id": run_id_val,
+                "run_attempt": int(run_attempt_val or 1),
+            }
 
     # ── Simple payload: {"repo": "owner/name"} (manual trigger) ──
     elif "repo" in payload:
@@ -139,8 +217,37 @@ async def github_webhook(
 
     logger.info("Analysis queued: report_id=%d for %s", report.id, full_name)
 
+    # Auto-diagnosis dispatch (v1): only for workflow_run failures, gated on
+    # the master switch + sample rate + daily budget.
+    auto_diag_queued = False
+    auto_diag_reason = "not-a-failure"
+    if auto_diag_target is not None:
+        should_run, reason = await _should_auto_diagnose(db, config)
+        auto_diag_reason = reason
+        if should_run:
+            background_tasks.add_task(
+                _run_auto_diagnosis_task,
+                auto_diag_target["owner"],
+                auto_diag_target["repo_name"],
+                auto_diag_target["run_id"],
+                auto_diag_target["run_attempt"],
+                config,
+            )
+            auto_diag_queued = True
+            logger.info(
+                "Auto-diagnose queued: %s run_id=%d",
+                full_name,
+                auto_diag_target["run_id"],
+            )
+        else:
+            logger.info("Auto-diagnose skipped (%s): %s", auto_diag_reason, full_name)
+
     return {
         "status": "accepted",
         "report_id": report.id,
         "repo": full_name,
+        "auto_diagnose": {
+            "queued": auto_diag_queued,
+            "reason": auto_diag_reason,
+        },
     }

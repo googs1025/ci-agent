@@ -207,6 +207,7 @@ DiagnoseTier = Literal["default", "deep"]
 class DiagnoseRequest(BaseModel):
     repo: str  # "owner/name"
     run_id: int  # GitHub workflow_run.id
+    run_attempt: int = 1
     tier: DiagnoseTier = "default"
 
 
@@ -222,3 +223,24 @@ class DiagnoseResponse(BaseModel):
     model: str
     cost_usd: float | None
     cached: bool = False
+    # How the diagnosis was produced: fresh / exact-cache / signature-cache / webhook
+    source: Literal["manual", "webhook_auto"] = "manual"
+
+
+class DiagnoseSiblingRun(BaseModel):
+    """One entry in the signature cluster list."""
+
+    repo: str
+    run_id: int
+    run_attempt: int
+    workflow: str
+    failing_step: str | None
+    created_at: datetime
+
+
+class SignatureClusterResponse(BaseModel):
+    signature: str
+    count: int
+    days: int
+    category: DiagnoseCategory | None
+    runs: list[DiagnoseSiblingRun]

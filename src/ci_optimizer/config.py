@@ -37,6 +37,11 @@ class AgentConfig:
     # Failure triage (single-run diagnosis) — issue #35
     diagnose_default_model: str = "claude-haiku-4-5-20251001"
     diagnose_deep_model: str = "claude-sonnet-4-20250514"
+    # v1 cost controls
+    diagnose_auto_on_webhook: bool = True
+    diagnose_sample_rate: float = 1.0  # 0.0–1.0 — fraction of failing runs to auto-diagnose
+    diagnose_budget_usd_day: float = 1.0  # hard ceiling on 24h auto-diagnosis spend
+    diagnose_signature_ttl_hours: int = 24  # signature dedup window
 
     def save(self):
         """Persist config to ~/.ci-agent/config.json."""
@@ -80,6 +85,23 @@ class AgentConfig:
             config.diagnose_default_model = env_diag_default
         if env_diag_deep := os.getenv("DIAGNOSE_DEEP_MODEL"):
             config.diagnose_deep_model = env_diag_deep
+        if env_auto := os.getenv("DIAGNOSE_AUTO_ON_WEBHOOK"):
+            config.diagnose_auto_on_webhook = env_auto.lower() in ("1", "true", "yes")
+        if env_sample := os.getenv("DIAGNOSE_SAMPLE_RATE"):
+            try:
+                config.diagnose_sample_rate = max(0.0, min(1.0, float(env_sample)))
+            except ValueError:
+                pass
+        if env_budget := os.getenv("DIAGNOSE_BUDGET_USD_DAY"):
+            try:
+                config.diagnose_budget_usd_day = max(0.0, float(env_budget))
+            except ValueError:
+                pass
+        if env_sig_ttl := os.getenv("DIAGNOSE_SIGNATURE_TTL_HOURS"):
+            try:
+                config.diagnose_signature_ttl_hours = max(1, int(env_sig_ttl))
+            except ValueError:
+                pass
 
         return config
 

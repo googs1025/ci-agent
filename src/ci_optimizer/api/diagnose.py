@@ -1,58 +1,52 @@
-"""Per-run CI failure diagnosis endpoint (issue #35, v0).
+"""Per-run CI failure diagnosis endpoint (issue #35, v1).
 
-POST /api/ci-runs/diagnose
-    Fetch a single failed run from GitHub, extract the error excerpt,
-    invoke the failure-triage skill, and return a structured diagnosis.
+v1 replaces v0's in-memory cache with DB persistence:
+- Exact cache lookup keyed on (repo_id, run_id, run_attempt, tier)
+- Signature-based dedup: same normalized error within 24h reuses an existing diagnosis
+- Daily budget tracker for webhook auto-diagnosis (manual calls always proceed)
 
-v0 uses an in-memory cache keyed on (repo, run_id, tier). v1 replaces this
-with DB-backed persistence once the `failure_diagnoses` table lands (#36).
+v0 in-memory cache is removed. Frontend integration lands in v2 (#32).
 """
 
 from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ci_optimizer.agents.failure_triage import FailureTriageError, diagnose
-from ci_optimizer.api.schemas import DiagnoseRequest, DiagnoseResponse
+from ci_optimizer.api.routes import get_db
+from ci_optimizer.api.schemas import (
+    DiagnoseRequest,
+    DiagnoseResponse,
+    DiagnoseSiblingRun,
+    SignatureClusterResponse,
+)
 from ci_optimizer.config import AgentConfig
+from ci_optimizer.db.crud import (
+    find_cached_diagnosis,
+    find_diagnosis_by_signature,
+    get_or_create_repo,
+    list_diagnoses_by_signature,
+    save_diagnosis,
+)
+from ci_optimizer.db.models import FailureDiagnosis, Repository
 from ci_optimizer.github_client import GitHubClient
 from ci_optimizer.log_extractor import compute_signature, extract_error_excerpt
 
 logger = logging.getLogger("ci_optimizer.diagnose")
 
-diagnose_router = APIRouter(prefix="/api/ci-runs", tags=["diagnose"])
+diagnose_router = APIRouter(prefix="/api", tags=["diagnose"])
 
-# ── in-memory cache (v0) ─────────────────────────────────────────────────────
-# Replaced by DB-backed cache in v1. Keyed by (repo, run_id, tier).
-_CACHE: dict[tuple[str, int, str], tuple[DiagnoseResponse, float]] = {}
-_CACHE_TTL_SEC = 300  # 5 min
-
-# Validates "owner/repo" format
+# Validates "owner/repo" format (shared with webhooks)
 _REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 
 
-def _cache_get(key: tuple[str, int, str]) -> DiagnoseResponse | None:
-    entry = _CACHE.get(key)
-    if entry is None:
-        return None
-    response, expires_at = entry
-    if time.time() > expires_at:
-        _CACHE.pop(key, None)
-        return None
-    return response
-
-
-def _cache_set(key: tuple[str, int, str], value: DiagnoseResponse) -> None:
-    _CACHE[key] = (value, time.time() + _CACHE_TTL_SEC)
-
-
 def _pick_failed_job(jobs: list[dict]) -> dict | None:
-    """Return the first failed job from a list. v0 handles one job per run."""
+    """Return the first failed job from a list. v0/v1 handles one job per run."""
     for job in jobs:
         if job.get("conclusion") == "failure":
             return job
@@ -68,64 +62,114 @@ def _find_failing_step(job: dict) -> str | None:
 
 
 def _tier_to_model(tier: Literal["default", "deep"], config: AgentConfig) -> str:
-    if tier == "deep":
-        return config.diagnose_deep_model
-    return config.diagnose_default_model
+    return config.diagnose_deep_model if tier == "deep" else config.diagnose_default_model
 
 
-@diagnose_router.post("/diagnose", response_model=DiagnoseResponse)
-async def diagnose_run(req: DiagnoseRequest) -> DiagnoseResponse:
-    """Diagnose a single failed CI run.
+def _diag_to_response(
+    diag: FailureDiagnosis,
+    *,
+    cached: bool,
+) -> DiagnoseResponse:
+    return DiagnoseResponse(
+        category=diag.category,  # type: ignore[arg-type]
+        confidence=diag.confidence,  # type: ignore[arg-type]
+        root_cause=diag.root_cause,
+        quick_fix=diag.quick_fix,
+        failing_step=diag.failing_step,
+        error_excerpt=diag.error_excerpt,
+        error_signature=diag.error_signature,
+        workflow=diag.workflow,
+        model=diag.model,
+        cost_usd=diag.cost_usd,
+        cached=cached,
+        source=diag.source,  # type: ignore[arg-type]
+    )
 
-    Returns 400 if the run has no failed jobs, 404 if the run doesn't exist,
-    502 if the LLM call fails.
+
+async def run_diagnosis(
+    db: AsyncSession,
+    *,
+    owner: str,
+    repo_name: str,
+    run_id: int,
+    run_attempt: int,
+    tier: Literal["default", "deep"],
+    source: Literal["manual", "webhook_auto"],
+    config: AgentConfig | None = None,
+) -> DiagnoseResponse:
+    """Core diagnosis flow — shared by manual API + webhook auto path.
+
+    Cache order:
+        1. Exact cache: same (repo, run, attempt, tier)
+        2. Signature cache: same normalized error within TTL window
+        3. Fresh diagnosis via LLM
     """
-    if not _REPO_RE.match(req.repo):
-        raise HTTPException(status_code=400, detail="repo must match 'owner/name'")
+    config = config or AgentConfig.load()
+    db_repo = await get_or_create_repo(db, owner, repo_name)
+    await db.flush()
 
-    tier: Literal["default", "deep"] = req.tier
-    cache_key = (req.repo, req.run_id, tier)
+    # 1. Exact cache
+    if existing := await find_cached_diagnosis(db, db_repo.id, run_id, run_attempt, tier):
+        logger.info("diagnose: exact cache hit run=%d tier=%s", run_id, tier)
+        return _diag_to_response(existing, cached=True)
 
-    if cached := _cache_get(cache_key):
-        logger.info("diagnose: cache hit for %s run=%d tier=%s", req.repo, req.run_id, tier)
-        return cached.model_copy(update={"cached": True})
-
-    config = AgentConfig.load()
-    owner, name = req.repo.split("/", 1)
+    # 2. Fetch from GitHub
     gh = GitHubClient(config=config)
-
     try:
-        jobs = await gh.get_run_jobs(owner, name, req.run_id, filter="latest")
-    except Exception as e:
-        logger.warning("diagnose: failed to fetch jobs: %s", e)
-        await gh.close()
-        raise HTTPException(status_code=404, detail=f"Run not found or inaccessible: {e}") from e
+        try:
+            jobs = await gh.get_run_jobs(owner, repo_name, run_id, filter="latest")
+        except Exception as e:
+            logger.warning("diagnose: failed to fetch jobs: %s", e)
+            raise HTTPException(status_code=404, detail=f"Run not found or inaccessible: {e}") from e
 
-    failing_job = _pick_failed_job(jobs)
-    if failing_job is None:
-        await gh.close()
-        raise HTTPException(
-            status_code=400,
-            detail="Run has no failed jobs — nothing to diagnose",
-        )
+        failing_job = _pick_failed_job(jobs)
+        if failing_job is None:
+            raise HTTPException(status_code=400, detail="Run has no failed jobs — nothing to diagnose")
 
-    # Fetch the full-run log zip (GitHub doesn't offer per-job logs via REST).
-    log_text = await gh.get_run_logs(owner, name, req.run_id, max_lines=2000)
-    await gh.close()
+        log_text = await gh.get_run_logs(owner, repo_name, run_id, max_lines=2000)
+    finally:
+        await gh.close()
 
     if not log_text:
-        raise HTTPException(
-            status_code=502,
-            detail="Could not retrieve run logs from GitHub",
-        )
+        raise HTTPException(status_code=502, detail="Could not retrieve run logs from GitHub")
 
     failing_step = _find_failing_step(failing_job)
     excerpt, first_error_line = extract_error_excerpt(log_text, max_lines=200)
     signature = compute_signature(failing_step, first_error_line)
-
     workflow_name = failing_job.get("workflow_name") or "unknown"
-    model = _tier_to_model(tier, config)
 
+    # 3. Signature cache — reuse diagnosis from an identical recent failure
+    if sig_hit := await find_diagnosis_by_signature(db, signature, ttl_hours=config.diagnose_signature_ttl_hours):
+        logger.info(
+            "diagnose: signature cache hit sig=%s reusing diag=%d",
+            signature,
+            sig_hit.id,
+        )
+        # Persist a new record for this run pointing to the reused content
+        # (so the exact-cache path hits next time).
+        saved = await save_diagnosis(
+            db,
+            repo_id=db_repo.id,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            tier=tier,
+            category=sig_hit.category,
+            confidence=sig_hit.confidence,
+            root_cause=sig_hit.root_cause,
+            quick_fix=sig_hit.quick_fix,
+            failing_step=failing_step,
+            workflow=workflow_name,
+            error_excerpt=excerpt,
+            error_signature=signature,
+            model=sig_hit.model,
+            cost_usd=0.0,  # no new LLM call
+            source=source,
+        )
+        await db.commit()
+        return _diag_to_response(saved, cached=True)
+
+    # 4. Fresh LLM call
+    model = _tier_to_model(tier, config)
     try:
         diag = await diagnose(
             excerpt=excerpt,
@@ -141,18 +185,101 @@ async def diagnose_run(req: DiagnoseRequest) -> DiagnoseResponse:
         logger.exception("diagnose: unexpected error")
         raise HTTPException(status_code=502, detail=f"Diagnosis error: {e}") from e
 
-    response = DiagnoseResponse(
+    saved = await save_diagnosis(
+        db,
+        repo_id=db_repo.id,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        tier=tier,
         category=diag["category"],
         confidence=diag["confidence"],
         root_cause=diag["root_cause"],
         quick_fix=diag.get("quick_fix"),
         failing_step=failing_step,
+        workflow=workflow_name,
         error_excerpt=excerpt,
         error_signature=signature,
-        workflow=workflow_name,
         model=diag["model"],
         cost_usd=diag.get("cost_usd"),
-        cached=False,
+        source=source,
     )
-    _cache_set(cache_key, response)
-    return response
+    await db.commit()
+    return _diag_to_response(saved, cached=False)
+
+
+@diagnose_router.post("/ci-runs/diagnose", response_model=DiagnoseResponse)
+async def diagnose_run(
+    req: DiagnoseRequest,
+    db: AsyncSession = Depends(get_db),
+) -> DiagnoseResponse:
+    """Diagnose a single failed CI run.
+
+    Returns 400 for malformed repo or run without failed jobs,
+    404 if the run is inaccessible, 502 if the LLM or GitHub call fails.
+    """
+    if not _REPO_RE.match(req.repo):
+        raise HTTPException(status_code=400, detail="repo must match 'owner/name'")
+
+    owner, repo_name = req.repo.split("/", 1)
+    return await run_diagnosis(
+        db,
+        owner=owner,
+        repo_name=repo_name,
+        run_id=req.run_id,
+        run_attempt=req.run_attempt,
+        tier=req.tier,
+        source="manual",
+    )
+
+
+@diagnose_router.get(
+    "/diagnoses/by-signature/{signature}",
+    response_model=SignatureClusterResponse,
+)
+async def diagnoses_by_signature(
+    signature: str,
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+) -> SignatureClusterResponse:
+    """List all recent failures sharing the same error signature.
+
+    Used to answer "how often has this exact failure happened lately?"
+    """
+    if len(signature) != 12 or any(c not in "0123456789abcdef" for c in signature):
+        raise HTTPException(status_code=400, detail="signature must be 12 hex chars")
+
+    diagnoses = await list_diagnoses_by_signature(db, signature, days=days)
+
+    # Join repo info for display (small N so a lookup dict is fine)
+    repo_ids = {d.repo_id for d in diagnoses}
+    repos: dict[int, str] = {}
+    if repo_ids:
+        from sqlalchemy import select
+
+        stmt = select(Repository).where(Repository.id.in_(repo_ids))
+        result = await db.execute(stmt)
+        for r in result.scalars().all():
+            repos[r.id] = f"{r.owner}/{r.repo}"
+
+    runs = [
+        DiagnoseSiblingRun(
+            repo=repos.get(d.repo_id, "unknown/unknown"),
+            run_id=d.run_id,
+            run_attempt=d.run_attempt,
+            workflow=d.workflow,
+            failing_step=d.failing_step,
+            created_at=d.created_at,
+        )
+        for d in diagnoses
+    ]
+
+    # Category is whatever the most recent diagnosis says (they should all agree).
+    category = diagnoses[0].category if diagnoses else None
+
+    return SignatureClusterResponse(
+        signature=signature,
+        count=len(diagnoses),
+        days=days,
+        category=category,  # type: ignore[arg-type]
+        runs=runs,
+    )
