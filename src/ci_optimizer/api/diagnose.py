@@ -23,6 +23,7 @@ from ci_optimizer.api.schemas import (
     DiagnoseRequest,
     DiagnoseResponse,
     DiagnoseSiblingRun,
+    FailedRunSummary,
     SignatureClusterResponse,
 )
 from ci_optimizer.config import AgentConfig
@@ -126,7 +127,12 @@ async def run_diagnosis(
         if failing_job is None:
             raise HTTPException(status_code=400, detail="Run has no failed jobs — nothing to diagnose")
 
-        log_text = await gh.get_run_logs(owner, repo_name, run_id, max_lines=2000)
+        # Fetch the log of the specific failing job, not the whole-run ZIP,
+        # so we don't mix output from unrelated passing jobs.
+        log_text = await gh.get_job_log(owner, repo_name, failing_job["id"], max_lines=2000)
+        if not log_text:
+            # Fall back to whole-run log if per-job fetch fails (e.g., log expired)
+            log_text = await gh.get_run_logs(owner, repo_name, run_id, max_lines=2000)
     finally:
         await gh.close()
 
@@ -283,3 +289,69 @@ async def diagnoses_by_signature(
         category=category,  # type: ignore[arg-type]
         runs=runs,
     )
+
+
+def _parse_github_datetime(iso: str | None) -> object:
+    """GitHub returns ISO-8601 strings with 'Z'; FastAPI will serialize datetimes."""
+    if not iso:
+        return None
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+@diagnose_router.get(
+    "/repos/{owner}/{repo_name}/failed-runs",
+    response_model=list[FailedRunSummary],
+)
+async def list_failed_runs(
+    owner: str,
+    repo_name: str,
+    limit: int = Query(default=20, ge=1, le=50),
+) -> list[FailedRunSummary]:
+    """List recent failed workflow runs for a repository.
+
+    Queries GitHub directly (no DB persistence) so the picker works even
+    on repos that have never been analyzed. Returns most recent first.
+    """
+    if not _REPO_RE.match(f"{owner}/{repo_name}"):
+        raise HTTPException(status_code=400, detail="invalid owner/repo")
+
+    config = AgentConfig.load()
+    gh = GitHubClient(config=config)
+    try:
+        # GitHub's "status" filter doesn't support "failure" — we filter by
+        # conclusion client-side after fetching recent completed runs.
+        data = await gh._request(
+            "GET",
+            f"/repos/{owner}/{repo_name}/actions/runs",
+            params={"status": "completed", "per_page": min(limit * 3, 100)},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Repository not accessible: {e}") from e
+    finally:
+        await gh.close()
+
+    all_runs = data.get("workflow_runs", []) if isinstance(data, dict) else []
+    failed = [
+        r
+        for r in all_runs
+        if r.get("conclusion") in ("failure", "timed_out", "startup_failure")
+    ][:limit]
+
+    return [
+        FailedRunSummary(
+            run_id=r["id"],
+            run_attempt=r.get("run_attempt", 1),
+            workflow=r.get("name", "unknown"),
+            branch=r.get("head_branch"),
+            event=r.get("event"),
+            created_at=_parse_github_datetime(r.get("created_at")),  # type: ignore[arg-type]
+            html_url=r.get("html_url"),
+            actor=(r.get("actor") or {}).get("login"),
+        )
+        for r in failed
+    ]

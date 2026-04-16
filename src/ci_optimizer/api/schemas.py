@@ -244,3 +244,16 @@ class SignatureClusterResponse(BaseModel):
     days: int
     category: DiagnoseCategory | None
     runs: list[DiagnoseSiblingRun]
+
+
+class FailedRunSummary(BaseModel):
+    """A single failed GitHub workflow run, shown in the diagnose picker."""
+
+    run_id: int
+    run_attempt: int
+    workflow: str
+    branch: str | None
+    event: str | None
+    created_at: datetime | None
+    html_url: str | None
+    actor: str | None

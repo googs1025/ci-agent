@@ -150,6 +150,34 @@ class GitHubClient:
             pass
         return None
 
+    async def get_job_log(
+        self,
+        owner: str,
+        repo: str,
+        job_id: int,
+        max_lines: int = 2000,
+    ) -> str | None:
+        """Download the log for a single job. Returns truncated plain text.
+
+        Unlike ``get_run_logs`` (which returns the whole-run ZIP), this hits
+        the per-job endpoint and returns just that job's log directly as text.
+        """
+        client = await self._get_client()
+        try:
+            response = await client.get(
+                f"/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+                follow_redirects=True,
+            )
+            if response.status_code != 200:
+                return None
+            text = response.text
+            lines = text.split("\n")
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]
+            return "\n".join(lines) if lines else None
+        except httpx.HTTPError:
+            return None
+
     async def get_workflows(self, owner: str, repo: str) -> list[dict]:
         """List all workflows in the repo."""
         data = await self._request("GET", f"/repos/{owner}/{repo}/actions/workflows")

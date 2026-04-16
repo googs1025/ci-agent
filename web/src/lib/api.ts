@@ -4,6 +4,7 @@ import type {
   DashboardData,
   DiagnoseRequest,
   DiagnoseResponse,
+  FailedRunSummary,
   Report,
   ReportsListResponse,
   Repository,
@@ -189,5 +190,20 @@ export async function getSignatureCluster(
   const params = new URLSearchParams({ days: String(days) });
   return request<SignatureClusterResponse>(
     `/api/diagnoses/by-signature/${encodeURIComponent(signature)}?${params.toString()}`,
+  );
+}
+
+/**
+ * List recent failed workflow runs for a repository (live GitHub query).
+ * Used by the /diagnose picker so users don't need to know run_id.
+ */
+export async function getFailedRuns(
+  repo: string,
+  limit: number = 20,
+): Promise<FailedRunSummary[]> {
+  const [owner, name] = repo.split('/', 2);
+  if (!owner || !name) throw new Error('repo must be owner/name');
+  return request<FailedRunSummary[]>(
+    `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/failed-runs?limit=${limit}`,
   );
 }

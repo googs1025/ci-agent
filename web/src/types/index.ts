@@ -242,3 +242,14 @@ export interface SignatureClusterResponse {
   category: DiagnoseCategory | null;
   runs: DiagnoseSiblingRun[];
 }
+
+export interface FailedRunSummary {
+  run_id: number;
+  run_attempt: number;
+  workflow: string;
+  branch: string | null;
+  event: string | null;
+  created_at: string | null;
+  html_url: string | null;
+  actor: string | null;
+}
