@@ -336,11 +336,7 @@ async def list_failed_runs(
         await gh.close()
 
     all_runs = data.get("workflow_runs", []) if isinstance(data, dict) else []
-    failed = [
-        r
-        for r in all_runs
-        if r.get("conclusion") in ("failure", "timed_out", "startup_failure")
-    ][:limit]
+    failed = [r for r in all_runs if r.get("conclusion") in ("failure", "timed_out", "startup_failure")][:limit]
 
     return [
         FailedRunSummary(
