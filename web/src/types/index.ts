@@ -184,3 +184,61 @@ export interface Repository {
   url: string;
   last_analyzed_at: string | null;
 }
+
+// ──────────────────────────────────────────────────────────
+// Failure Triage (issue #35)
+// ──────────────────────────────────────────────────────────
+
+export type DiagnoseCategory =
+  | 'flaky_test'
+  | 'timeout'
+  | 'dependency'
+  | 'network'
+  | 'resource_limit'
+  | 'config'
+  | 'build'
+  | 'infra'
+  | 'unknown';
+
+export type DiagnoseConfidence = 'high' | 'medium' | 'low';
+
+export type DiagnoseTier = 'default' | 'deep';
+
+export interface DiagnoseRequest {
+  repo: string;
+  run_id: number;
+  run_attempt?: number;
+  tier?: DiagnoseTier;
+}
+
+export interface DiagnoseResponse {
+  category: DiagnoseCategory;
+  confidence: DiagnoseConfidence;
+  root_cause: string;
+  quick_fix: string | null;
+  failing_step: string | null;
+  error_excerpt: string;
+  error_signature: string;
+  workflow: string;
+  model: string;
+  cost_usd: number | null;
+  cached: boolean;
+  source: 'manual' | 'webhook_auto';
+}
+
+export interface DiagnoseSiblingRun {
+  repo: string;
+  run_id: number;
+  run_attempt: number;
+  workflow: string;
+  failing_step: string | null;
+  created_at: string;
+}
+
+export interface SignatureClusterResponse {
+  signature: string;
+  count: number;
+  days: number;
+  category: DiagnoseCategory | null;
+  runs: DiagnoseSiblingRun[];
+}

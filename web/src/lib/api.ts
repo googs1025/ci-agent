@@ -2,9 +2,12 @@ import type {
   AnalyzeRequest,
   AnalyzeResponse,
   DashboardData,
+  DiagnoseRequest,
+  DiagnoseResponse,
   Report,
   ReportsListResponse,
   Repository,
+  SignatureClusterResponse,
   Skill,
   TrendsData,
   WebhookStatus,
@@ -161,4 +164,30 @@ export async function deleteSkill(name: string): Promise<{ removed: string }> {
  */
 export async function getWebhookStatus(): Promise<WebhookStatus> {
   return request<WebhookStatus>('/api/webhooks/status');
+}
+
+/**
+ * Diagnose a single failed CI run (issue #35).
+ * Returns a structured diagnosis; the backend handles caching + signature dedup.
+ */
+export async function diagnoseRun(
+  req: DiagnoseRequest,
+): Promise<DiagnoseResponse> {
+  return request<DiagnoseResponse>('/api/ci-runs/diagnose', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+/**
+ * List all recent failures sharing the same error signature.
+ */
+export async function getSignatureCluster(
+  signature: string,
+  days: number = 30,
+): Promise<SignatureClusterResponse> {
+  const params = new URLSearchParams({ days: String(days) });
+  return request<SignatureClusterResponse>(
+    `/api/diagnoses/by-signature/${encodeURIComponent(signature)}?${params.toString()}`,
+  );
 }
