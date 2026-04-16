@@ -2,9 +2,13 @@ import type {
   AnalyzeRequest,
   AnalyzeResponse,
   DashboardData,
+  DiagnoseRequest,
+  DiagnoseResponse,
+  FailedRunSummary,
   Report,
   ReportsListResponse,
   Repository,
+  SignatureClusterResponse,
   Skill,
   TrendsData,
   WebhookStatus,
@@ -161,4 +165,45 @@ export async function deleteSkill(name: string): Promise<{ removed: string }> {
  */
 export async function getWebhookStatus(): Promise<WebhookStatus> {
   return request<WebhookStatus>('/api/webhooks/status');
+}
+
+/**
+ * Diagnose a single failed CI run (issue #35).
+ * Returns a structured diagnosis; the backend handles caching + signature dedup.
+ */
+export async function diagnoseRun(
+  req: DiagnoseRequest,
+): Promise<DiagnoseResponse> {
+  return request<DiagnoseResponse>('/api/ci-runs/diagnose', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+/**
+ * List all recent failures sharing the same error signature.
+ */
+export async function getSignatureCluster(
+  signature: string,
+  days: number = 30,
+): Promise<SignatureClusterResponse> {
+  const params = new URLSearchParams({ days: String(days) });
+  return request<SignatureClusterResponse>(
+    `/api/diagnoses/by-signature/${encodeURIComponent(signature)}?${params.toString()}`,
+  );
+}
+
+/**
+ * List recent failed workflow runs for a repository (live GitHub query).
+ * Used by the /diagnose picker so users don't need to know run_id.
+ */
+export async function getFailedRuns(
+  repo: string,
+  limit: number = 20,
+): Promise<FailedRunSummary[]> {
+  const [owner, name] = repo.split('/', 2);
+  if (!owner || !name) throw new Error('repo must be owner/name');
+  return request<FailedRunSummary[]>(
+    `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/failed-runs?limit=${limit}`,
+  );
 }

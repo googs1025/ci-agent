@@ -7,7 +7,7 @@ from sqlalchemy import String, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ci_optimizer.db.models import AnalysisReport, Finding, Repository
+from ci_optimizer.db.models import AnalysisReport, FailureDiagnosis, Finding, Repository
 
 
 def compute_filters_hash(filters_json: str | None) -> str:
@@ -324,3 +324,144 @@ async def get_dashboard_trends(
         "dimension_trends": dimension_trends,
         "repo_comparison": repo_comparison,
     }
+
+
+# ── Failure diagnoses (issue #35, v1) ───────────────────────────────────────
+
+
+async def find_cached_diagnosis(
+    session: AsyncSession,
+    repo_id: int,
+    run_id: int,
+    run_attempt: int,
+    tier: str,
+) -> FailureDiagnosis | None:
+    """Return the diagnosis for this exact (run, tier) if it exists.
+
+    Unlike report caching, diagnoses have no TTL — a run is immutable, so
+    the diagnosis for it should never need re-computation at the same tier.
+    """
+    stmt = select(FailureDiagnosis).where(
+        FailureDiagnosis.repo_id == repo_id,
+        FailureDiagnosis.run_id == run_id,
+        FailureDiagnosis.run_attempt == run_attempt,
+        FailureDiagnosis.tier == tier,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def find_diagnosis_by_signature(
+    session: AsyncSession,
+    signature: str,
+    ttl_hours: int = 24,
+) -> FailureDiagnosis | None:
+    """Return the most recent diagnosis matching this signature within TTL.
+
+    Used for signature-based dedup: if the exact same error (same step,
+    same normalized error line) was diagnosed within the TTL window, reuse
+    that diagnosis instead of calling the LLM again.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+    stmt = (
+        select(FailureDiagnosis)
+        .where(
+            FailureDiagnosis.error_signature == signature,
+            FailureDiagnosis.created_at >= cutoff,
+        )
+        .order_by(FailureDiagnosis.created_at.desc())
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def save_diagnosis(
+    session: AsyncSession,
+    *,
+    repo_id: int,
+    run_id: int,
+    run_attempt: int,
+    tier: str,
+    category: str,
+    confidence: str,
+    root_cause: str,
+    quick_fix: str | None,
+    failing_step: str | None,
+    workflow: str,
+    error_excerpt: str,
+    error_signature: str,
+    model: str,
+    cost_usd: float | None,
+    source: str = "manual",
+) -> FailureDiagnosis:
+    """Upsert a diagnosis keyed on (repo_id, run_id, run_attempt, tier)."""
+    existing = await find_cached_diagnosis(session, repo_id, run_id, run_attempt, tier)
+    if existing is not None:
+        existing.category = category
+        existing.confidence = confidence
+        existing.root_cause = root_cause
+        existing.quick_fix = quick_fix
+        existing.failing_step = failing_step
+        existing.workflow = workflow
+        existing.error_excerpt = error_excerpt
+        existing.error_signature = error_signature
+        existing.model = model
+        existing.cost_usd = cost_usd
+        existing.source = source
+        await session.flush()
+        return existing
+
+    diag = FailureDiagnosis(
+        repo_id=repo_id,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        tier=tier,
+        category=category,
+        confidence=confidence,
+        root_cause=root_cause,
+        quick_fix=quick_fix,
+        failing_step=failing_step,
+        workflow=workflow,
+        error_excerpt=error_excerpt,
+        error_signature=error_signature,
+        model=model,
+        cost_usd=cost_usd,
+        source=source,
+    )
+    session.add(diag)
+    await session.flush()
+    return diag
+
+
+async def list_diagnoses_by_signature(
+    session: AsyncSession,
+    signature: str,
+    days: int = 30,
+) -> list[FailureDiagnosis]:
+    """Return all diagnoses sharing a signature within the last N days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    stmt = (
+        select(FailureDiagnosis)
+        .where(
+            FailureDiagnosis.error_signature == signature,
+            FailureDiagnosis.created_at >= cutoff,
+        )
+        .order_by(FailureDiagnosis.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_daily_diagnose_spend(session: AsyncSession) -> float:
+    """Sum cost_usd of all diagnoses created in the last 24 hours.
+
+    Used by the webhook auto-diagnosis path to enforce a daily budget
+    ceiling. Returns 0.0 if no diagnoses recorded or cost_usd is NULL.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    stmt = select(func.coalesce(func.sum(FailureDiagnosis.cost_usd), 0.0)).where(
+        FailureDiagnosis.created_at >= cutoff,
+    )
+    result = await session.execute(stmt)
+    return float(result.scalar_one() or 0.0)

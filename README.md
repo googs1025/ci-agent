@@ -7,12 +7,14 @@ AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude
 ## Features
 
 - **四维度分析**: 执行效率、安全最佳实践、成本优化、错误模式分析
+- **单次失败诊断 (Failure Triage)**: 针对具体失败 Run 的 AI 根因分析，9 类错误分类 + 快速修复建议，支持手动触发 + Webhook 自动诊断 + 签名聚类去重
 - **双 AI 引擎**: Anthropic (Claude Agent SDK) / OpenAI (任意兼容端点)
 - **双交互方式**: CLI 命令行 + Web UI (Next.js Dashboard)
 - **多语言报告**: 中文 / 英文
 - **CI 使用率统计**: Job 耗时、排队时间、Runner 分布、计费估算、最慢 Step 排名
 - **智能输入**: 支持 GitHub URL / `owner/repo` 简写 / 本地路径
 - **灵活过滤**: 时间范围、Workflow、状态、分支
+- **LLM 可观测性**: 可选 Langfuse 集成，自动追踪 Token 用量、成本和延迟
 
 ## Architecture
 
@@ -194,6 +196,7 @@ docker compose up -d
 - [系统架构](docs/design/architecture.md) — 整体架构与模块设计
 - [Skill 系统设计](docs/design/skill-system.md) — 声明式技能定义与扩展机制
 - [Webhook 设计](docs/design/webhook.md) — 实时 CI 用量追踪方案（草案）
+- [Failure Triage 设计](docs/design/failure-triage.md) — 单次失败 AI 诊断：skill 契约、DB 模型、成本控制、前端 UX
 
 ### 运维部署
 - [部署指南 (中文)](docs/guides/zh/deployment.md) — Docker / Kubernetes 部署

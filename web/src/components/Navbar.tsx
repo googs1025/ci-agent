@@ -7,6 +7,7 @@ import { useLocale, type Lang } from '@/lib/locale';
 const navLinkKeys = [
   { href: '/', key: 'nav.dashboard' },
   { href: '/analyze', key: 'nav.analyze' },
+  { href: '/diagnose', key: 'nav.diagnose' },
   { href: '/reports', key: 'nav.reports' },
   { href: '/skills', key: 'nav.skills' },
   { href: '/settings', key: 'nav.settings' },

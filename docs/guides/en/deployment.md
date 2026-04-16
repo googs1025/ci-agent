@@ -289,6 +289,12 @@ Non-sensitive config goes in `deploy/k8s/configmap.yaml`; secrets go in `deploy/
 | `CI_AGENT_LANGUAGE` | `en` | Output language (`en` / `zh`) |
 | `CORS_ORIGINS` | — | Allowed frontend origin URL — **must be updated** |
 | `LANGFUSE_HOST` | `http://langfuse:3000` | Langfuse service URL (leave blank to disable) |
+| `DIAGNOSE_DEFAULT_MODEL` | `claude-haiku-4-5-20251001` | Default model for single-run diagnosis (override for OpenAI users) |
+| `DIAGNOSE_DEEP_MODEL` | `claude-sonnet-4-20250514` | Model used for Deep Analysis |
+| `DIAGNOSE_AUTO_ON_WEBHOOK` | `true` | Auto-diagnose on webhook failures |
+| `DIAGNOSE_SAMPLE_RATE` | `1.0` | Auto-diagnose sample rate 0.0–1.0 |
+| `DIAGNOSE_BUDGET_USD_DAY` | `1.0` | Daily USD ceiling for auto-diagnose |
+| `DIAGNOSE_SIGNATURE_TTL_HOURS` | `24` | Signature dedup window |
 
 ### Secret (Sensitive)
 

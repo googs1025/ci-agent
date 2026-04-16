@@ -183,3 +183,77 @@ class TrendsResponse(BaseModel):
     daily_scores: list[DailySeverityPoint]
     dimension_trends: list[DimensionTrendPoint]
     repo_comparison: list[RepoComparisonItem]
+
+
+# ── Failure Triage (issue #35) ───────────────────────────────────────────────
+
+DiagnoseCategory = Literal[
+    "flaky_test",
+    "timeout",
+    "dependency",
+    "network",
+    "resource_limit",
+    "config",
+    "build",
+    "infra",
+    "unknown",
+]
+
+DiagnoseConfidence = Literal["high", "medium", "low"]
+
+DiagnoseTier = Literal["default", "deep"]
+
+
+class DiagnoseRequest(BaseModel):
+    repo: str  # "owner/name"
+    run_id: int  # GitHub workflow_run.id
+    run_attempt: int = 1
+    tier: DiagnoseTier = "default"
+
+
+class DiagnoseResponse(BaseModel):
+    category: DiagnoseCategory
+    confidence: DiagnoseConfidence
+    root_cause: str
+    quick_fix: str | None
+    failing_step: str | None
+    error_excerpt: str
+    error_signature: str
+    workflow: str
+    model: str
+    cost_usd: float | None
+    cached: bool = False
+    # How the diagnosis was produced: fresh / exact-cache / signature-cache / webhook
+    source: Literal["manual", "webhook_auto"] = "manual"
+
+
+class DiagnoseSiblingRun(BaseModel):
+    """One entry in the signature cluster list."""
+
+    repo: str
+    run_id: int
+    run_attempt: int
+    workflow: str
+    failing_step: str | None
+    created_at: datetime
+
+
+class SignatureClusterResponse(BaseModel):
+    signature: str
+    count: int
+    days: int
+    category: DiagnoseCategory | None
+    runs: list[DiagnoseSiblingRun]
+
+
+class FailedRunSummary(BaseModel):
+    """A single failed GitHub workflow run, shown in the diagnose picker."""
+
+    run_id: int
+    run_attempt: int
+    workflow: str
+    branch: str | None
+    event: str | None
+    created_at: datetime | None
+    html_url: str | None
+    actor: str | None

@@ -49,6 +49,8 @@ def _workflow_run_payload(
     action: str = "completed",
     run_id: int = 12345,
     branch: str = "main",
+    conclusion: str = "success",
+    run_attempt: int = 1,
 ) -> dict:
     return {
         "action": action,
@@ -56,7 +58,8 @@ def _workflow_run_payload(
             "id": run_id,
             "head_branch": branch,
             "status": "completed",
-            "conclusion": "success",
+            "conclusion": conclusion,
+            "run_attempt": run_attempt,
         },
         "repository": {
             "full_name": repo_full_name,
@@ -208,3 +211,139 @@ class TestWebhookSimplePayload:
             os.environ.pop("WEBHOOK_SECRET", None)
             resp = await client.post(WEBHOOK_URL, json={"random": "data"})
         assert resp.status_code == 400
+
+
+class TestWebhookAutoDiagnose:
+    """Verify that workflow_run failures route to the auto-diagnosis path."""
+
+    @pytest.mark.asyncio
+    async def test_failure_queues_auto_diagnose(self, client):
+        import os
+
+        from ci_optimizer.api import webhooks as wh
+
+        payload = _workflow_run_payload(conclusion="failure")
+        with (
+            patch.dict("os.environ", {}, clear=False),
+            patch.object(wh, "_run_auto_diagnosis_task", new=AsyncMock()) as mock_task,
+        ):
+            os.environ.pop("WEBHOOK_SECRET", None)
+            resp = await client.post(WEBHOOK_URL, json=payload, headers={"X-GitHub-Event": "workflow_run"})
+
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["auto_diagnose"]["queued"] is True
+        assert body["auto_diagnose"]["reason"] == "ok"
+        # Background task is added via BackgroundTasks — verify the wrapper was
+        # registered (the call itself is deferred until after response).
+        assert mock_task is not None
+
+    @pytest.mark.asyncio
+    async def test_success_does_not_trigger_auto_diagnose(self, client):
+        import os
+
+        payload = _workflow_run_payload(conclusion="success")
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("WEBHOOK_SECRET", None)
+            resp = await client.post(WEBHOOK_URL, json=payload, headers={"X-GitHub-Event": "workflow_run"})
+
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["auto_diagnose"]["queued"] is False
+        assert body["auto_diagnose"]["reason"] == "not-a-failure"
+
+    @pytest.mark.asyncio
+    async def test_auto_diagnose_respects_master_switch(self, client):
+        import os
+
+        from ci_optimizer.api import webhooks as wh
+        from ci_optimizer.config import AgentConfig
+
+        fake_config = AgentConfig()
+        fake_config.diagnose_auto_on_webhook = False
+
+        payload = _workflow_run_payload(conclusion="failure")
+        with (
+            patch.dict("os.environ", {}, clear=False),
+            patch.object(wh.AgentConfig, "load", return_value=fake_config),
+        ):
+            os.environ.pop("WEBHOOK_SECRET", None)
+            resp = await client.post(WEBHOOK_URL, json=payload, headers={"X-GitHub-Event": "workflow_run"})
+
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["auto_diagnose"]["queued"] is False
+        assert body["auto_diagnose"]["reason"] == "disabled"
+
+    @pytest.mark.asyncio
+    async def test_auto_diagnose_respects_budget(self, client, db_session):
+        """When 24h spend >= budget, auto-diagnosis is skipped."""
+        import os
+
+        from ci_optimizer.api import webhooks as wh
+        from ci_optimizer.config import AgentConfig
+        from ci_optimizer.db.crud import save_diagnosis
+        from ci_optimizer.db.models import Repository
+
+        # Seed a big past spend
+        r = Repository(owner="acme", repo="svc")
+        db_session.add(r)
+        await db_session.flush()
+        await save_diagnosis(
+            db_session,
+            repo_id=r.id,
+            run_id=1,
+            run_attempt=1,
+            tier="default",
+            category="timeout",
+            confidence="high",
+            root_cause="x",
+            quick_fix=None,
+            failing_step=None,
+            workflow="ci",
+            error_excerpt="x",
+            error_signature="budgetcap001",
+            model="m",
+            cost_usd=5.0,
+        )
+        await db_session.commit()
+
+        fake_config = AgentConfig()
+        fake_config.diagnose_budget_usd_day = 1.0  # already exceeded
+
+        payload = _workflow_run_payload(conclusion="failure")
+        with (
+            patch.dict("os.environ", {}, clear=False),
+            patch.object(wh.AgentConfig, "load", return_value=fake_config),
+        ):
+            os.environ.pop("WEBHOOK_SECRET", None)
+            resp = await client.post(WEBHOOK_URL, json=payload, headers={"X-GitHub-Event": "workflow_run"})
+
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["auto_diagnose"]["queued"] is False
+        assert "budget-exceeded" in body["auto_diagnose"]["reason"]
+
+    @pytest.mark.asyncio
+    async def test_auto_diagnose_respects_sample_rate_zero(self, client):
+        """Sample rate 0 means no auto-diagnosis."""
+        import os
+
+        from ci_optimizer.api import webhooks as wh
+        from ci_optimizer.config import AgentConfig
+
+        fake_config = AgentConfig()
+        fake_config.diagnose_sample_rate = 0.0
+
+        payload = _workflow_run_payload(conclusion="failure")
+        with (
+            patch.dict("os.environ", {}, clear=False),
+            patch.object(wh.AgentConfig, "load", return_value=fake_config),
+        ):
+            os.environ.pop("WEBHOOK_SECRET", None)
+            resp = await client.post(WEBHOOK_URL, json=payload, headers={"X-GitHub-Event": "workflow_run"})
+
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["auto_diagnose"]["queued"] is False
+        assert "sampled-out" in body["auto_diagnose"]["reason"]

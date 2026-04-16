@@ -12,9 +12,10 @@ CI Optimizer is an AI-powered GitHub CI pipeline analysis tool that automaticall
 - [2. Analyze](#2-analyze)
 - [3. Reports](#3-reports)
 - [4. Report Detail](#4-report-detail)
-- [5. Skills](#5-skills)
-- [6. CLI Reference](#6-cli-reference)
-- [7. Configuration](#7-configuration)
+- [5. Diagnose — Single-Run Failure Analysis](#5-diagnose--single-run-failure-analysis)
+- [6. Skills](#6-skills)
+- [7. CLI Reference](#7-cli-reference)
+- [8. Configuration](#8-configuration)
 
 ---
 
@@ -230,7 +231,75 @@ Click any finding row to expand it:
 
 ---
 
-## 5. Skills
+## 5. Diagnose — Single-Run Failure Analysis
+
+AI root-cause analysis for a single failed CI run. Different from Analyze:
+
+| | Analyze | Diagnose |
+|---|---|---|
+| Scope | Repository history | One failed run |
+| Output | Multi-dimension findings report | Structured diagnosis card |
+| Use case | Periodic health check | "Why did _this_ CI fail?" |
+
+### Workflow
+
+1. Open the **Diagnose** page
+2. **Two input modes**:
+   - Enter `owner/repo` → click **Find Failures** → browse grouped recent failures (by workflow) → click **Diagnose** on any row
+   - Paste a full GitHub Actions run URL (e.g. `https://github.com/owner/repo/actions/runs/12345`) → repo, run_id, attempt are auto-extracted and diagnosis starts immediately
+3. Wait 5–15s for the diagnosis card
+
+### Diagnosis Card
+
+- **Category badge** — one of 9 categories (flaky_test / timeout / dependency / network / resource_limit / config / build / infra / unknown), color-coded
+- **Confidence** — high / medium / low
+- **Root cause** — one-sentence explanation
+- **Failing step + Workflow** — which step failed
+- **Quick fix** — copy-paste-able fix suggestion
+- **Error excerpt** — collapsible log window (~200 lines centered on the error anchor)
+- **Similar errors** — count of matching signatures in the last 30 days (expandable list)
+- **Model + Cost + Signature** — metadata
+- **Re-run with Deep Analysis** — re-analyze using `DIAGNOSE_DEEP_MODEL`
+
+### Webhook Auto-Diagnosis (optional)
+
+When the repository has a webhook configured and a `workflow_run` completes with `conclusion=failure`, the backend automatically triggers diagnosis. Gated by:
+
+| Env variable | Default | Description |
+|-------------|---------|-------------|
+| `DIAGNOSE_AUTO_ON_WEBHOOK` | `true` | Master switch |
+| `DIAGNOSE_SAMPLE_RATE` | `1.0` | Sample rate 0.0–1.0 |
+| `DIAGNOSE_BUDGET_USD_DAY` | `1.0` | Daily USD ceiling (manual calls ignore this) |
+| `DIAGNOSE_SIGNATURE_TTL_HOURS` | `24` | Signature dedup window |
+
+### Three-Layer Cache
+
+1. **Exact cache**: same `(repo, run_id, run_attempt, tier)` always hits (runs are immutable)
+2. **Signature cache**: identical error within 24h reuses a diagnosis across repos (no new LLM call)
+3. **Fresh LLM call**: only when both caches miss
+
+Refreshing the page (or sharing the URL) restores the exact view — state is fully reflected in the URL query string.
+
+### API (bypass the frontend)
+
+```bash
+# Single diagnosis
+curl -X POST http://localhost:8000/api/ci-runs/diagnose \
+  -H 'Content-Type: application/json' \
+  -d '{"repo":"owner/name","run_id":12345,"tier":"default"}'
+
+# List runs sharing an error signature
+curl "http://localhost:8000/api/diagnoses/by-signature/<12char-sig>?days=30"
+
+# List recent failed runs (for the picker UI)
+curl "http://localhost:8000/api/repos/owner/name/failed-runs?limit=20"
+```
+
+Full design doc: [Failure Triage Design](../../design/failure-triage.md).
+
+---
+
+## 6. Skills
 
 ![Skills Page](../../screenshots/06-skills.png)
 
@@ -274,7 +343,7 @@ Click a card to open the right-side drawer, which shows full information:
 
 ---
 
-## 6. CLI Reference
+## 7. CLI Reference
 
 ### Analysis
 
@@ -349,7 +418,7 @@ ci-agent config set language en
 
 ---
 
-## 7. Configuration
+## 8. Configuration
 
 ### Environment Variables (`.env`)
 
