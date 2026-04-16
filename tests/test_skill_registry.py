@@ -346,6 +346,8 @@ class TestBuiltinSkills:
         registry.load()
         skills = registry.get_active_skills()
 
+        # get_active_skills() excludes standalone skills (e.g., failure-triage)
+        # since they are invoked directly, not via the multi-specialist orchestrator.
         dims = {s.dimension for s in skills}
         assert dims == {"efficiency", "security", "cost", "errors"}
 
@@ -356,6 +358,11 @@ class TestBuiltinSkills:
             assert s.source == "builtin"
             assert len(s.prompt) > 100  # non-trivial prompt
             assert s.tools == ["Read", "Glob", "Grep"]
+
+        # The standalone failure-triage skill is still registered, just hidden.
+        triage = SkillRegistry(builtin_dir=_BUILTIN_DIR, user_dir=Path("/nonexistent")).load().get_skill("failure-triage")
+        assert triage is not None
+        assert triage.standalone is True
 
 
 class TestCollectRequiredData:

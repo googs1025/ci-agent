@@ -31,6 +31,9 @@ class Skill:
     priority: int = 100
     source: str = "builtin"
     source_path: Path | None = None
+    # Standalone skills are invoked directly (e.g., failure-triage for /api/ci-runs/diagnose)
+    # and are excluded from the multi-specialist orchestrator flow.
+    standalone: bool = False
 
     def to_agent_definition(self, model: str | None = None):
         """Convert to Claude Agent SDK AgentDefinition."""
@@ -113,6 +116,7 @@ class SkillRegistry:
             priority=meta.get("priority", 100),
             source=source,
             source_path=path,
+            standalone=meta.get("standalone", False),
         )
 
     @staticmethod
@@ -131,11 +135,20 @@ class SkillRegistry:
         return errors
 
     def get_active_skills(self, selected: list[str] | None = None) -> list[Skill]:
-        """Return enabled skills, optionally filtered by dimension names."""
-        skills = [s for s in self._skills.values() if s.enabled]
+        """Return enabled skills for the multi-specialist orchestrator.
+
+        Standalone skills (e.g., failure-triage) are excluded because they
+        have a different input contract and are invoked directly by their
+        own API endpoint. Use ``get_skill(name)`` to access them.
+        """
+        skills = [s for s in self._skills.values() if s.enabled and not s.standalone]
         if selected:
             skills = [s for s in skills if s.dimension in selected]
         return sorted(skills, key=lambda s: s.priority, reverse=True)
+
+    def get_skill(self, name: str) -> Skill | None:
+        """Return a skill by name (including standalone skills)."""
+        return self._skills.get(name)
 
     def collect_required_data(self, skills: list[Skill]) -> set[str]:
         """Union of all active skills' requires_data."""

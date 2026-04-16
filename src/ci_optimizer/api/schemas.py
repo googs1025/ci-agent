@@ -183,3 +183,42 @@ class TrendsResponse(BaseModel):
     daily_scores: list[DailySeverityPoint]
     dimension_trends: list[DimensionTrendPoint]
     repo_comparison: list[RepoComparisonItem]
+
+
+# ── Failure Triage (issue #35) ───────────────────────────────────────────────
+
+DiagnoseCategory = Literal[
+    "flaky_test",
+    "timeout",
+    "dependency",
+    "network",
+    "resource_limit",
+    "config",
+    "build",
+    "infra",
+    "unknown",
+]
+
+DiagnoseConfidence = Literal["high", "medium", "low"]
+
+DiagnoseTier = Literal["default", "deep"]
+
+
+class DiagnoseRequest(BaseModel):
+    repo: str  # "owner/name"
+    run_id: int  # GitHub workflow_run.id
+    tier: DiagnoseTier = "default"
+
+
+class DiagnoseResponse(BaseModel):
+    category: DiagnoseCategory
+    confidence: DiagnoseConfidence
+    root_cause: str
+    quick_fix: str | None
+    failing_step: str | None
+    error_excerpt: str
+    error_signature: str
+    workflow: str
+    model: str
+    cost_usd: float | None
+    cached: bool = False

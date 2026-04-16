@@ -34,6 +34,10 @@ class AgentConfig:
     max_turns: int = 20
     language: str = "en"  # "en" or "zh"
 
+    # Failure triage (single-run diagnosis) — issue #35
+    diagnose_default_model: str = "claude-haiku-4-5-20251001"
+    diagnose_deep_model: str = "claude-sonnet-4-20250514"
+
     def save(self):
         """Persist config to ~/.ci-agent/config.json."""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -72,6 +76,10 @@ class AgentConfig:
             config.base_url = env_base_url
         if env_openai_key := os.getenv("OPENAI_API_KEY"):
             config.openai_api_key = env_openai_key
+        if env_diag_default := os.getenv("DIAGNOSE_DEFAULT_MODEL"):
+            config.diagnose_default_model = env_diag_default
+        if env_diag_deep := os.getenv("DIAGNOSE_DEEP_MODEL"):
+            config.diagnose_deep_model = env_diag_deep
 
         return config
 
