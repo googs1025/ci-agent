@@ -7,8 +7,10 @@ See docs/superpowers/specs/2026-04-16-issue-triage-bot-design.md.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import os
 import pathlib
+import re
 import sys
 
 # ─── Config ────────────────────────────────────────────────
@@ -93,6 +95,56 @@ def is_eligible(issue: dict) -> bool:
         if datetime.now(timezone.utc) - dt > timedelta(days=MAX_ISSUE_AGE_DAYS):
             return False
     return True
+
+
+# ─── LLM output parsing ────────────────────────────────────
+VALID_CATEGORIES = {"bug", "question", "feature", "duplicate", "unknown"}
+VALID_CONFIDENCE = {"high", "medium", "low"}
+
+_FALLBACK = {
+    "category": "unknown",
+    "needs_info": False,
+    "missing_info": [],
+    "answer": None,
+    "confidence": "low",
+    "_parse_failed": True,
+}
+
+_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
+
+
+def parse_result(raw: str) -> dict:
+    """Parse LLM output into the diagnosis dict, with fallback on any error."""
+    if not raw:
+        return dict(_FALLBACK)
+
+    cleaned = _FENCE_RE.sub("", raw).strip()
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return dict(_FALLBACK)
+
+    if not isinstance(data, dict):
+        return dict(_FALLBACK)
+
+    category = data.get("category")
+    confidence = data.get("confidence", "low")
+    if category not in VALID_CATEGORIES or confidence not in VALID_CONFIDENCE:
+        return dict(_FALLBACK)
+
+    answer = data.get("answer")
+    if confidence == "low":
+        answer = None
+
+    return {
+        "category": category,
+        "needs_info": bool(data.get("needs_info", False)),
+        "missing_info": list(data.get("missing_info") or []),
+        "answer": answer,
+        "confidence": confidence,
+        "_parse_failed": False,
+    }
 
 
 def main() -> int:

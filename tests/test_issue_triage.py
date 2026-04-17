@@ -116,3 +116,39 @@ def test_is_eligible_rejects_bot_author():
 def test_is_eligible_rejects_stale_issue():
     old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
     assert issue_triage.is_eligible(_issue(created_at=old)) is False
+
+
+def test_parse_result_valid_question():
+    raw = '{"category":"question","needs_info":false,"missing_info":[],"answer":"Run `make install`.","confidence":"high"}'
+    result = issue_triage.parse_result(raw)
+    assert result["category"] == "question"
+    assert result["answer"] == "Run `make install`."
+    assert result["confidence"] == "high"
+    assert result["_parse_failed"] is False
+
+
+def test_parse_result_low_confidence_drops_answer():
+    raw = '{"category":"question","needs_info":false,"missing_info":[],"answer":"maybe this","confidence":"low"}'
+    result = issue_triage.parse_result(raw)
+    assert result["answer"] is None
+
+
+def test_parse_result_non_json_falls_back_to_unknown():
+    result = issue_triage.parse_result("Sorry, I can't help with that.")
+    assert result["category"] == "unknown"
+    assert result["answer"] is None
+    assert result["_parse_failed"] is True
+
+
+def test_parse_result_invalid_category_falls_back():
+    raw = '{"category":"FIXME","needs_info":false,"missing_info":[],"answer":null,"confidence":"high"}'
+    result = issue_triage.parse_result(raw)
+    assert result["category"] == "unknown"
+    assert result["_parse_failed"] is True
+
+
+def test_parse_result_strips_markdown_fences():
+    raw = '```json\n{"category":"bug","needs_info":true,"missing_info":["version"],"answer":null,"confidence":"high"}\n```'
+    result = issue_triage.parse_result(raw)
+    assert result["category"] == "bug"
+    assert result["missing_info"] == ["version"]
