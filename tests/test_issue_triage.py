@@ -152,3 +152,83 @@ def test_parse_result_strips_markdown_fences():
     result = issue_triage.parse_result(raw)
     assert result["category"] == "bug"
     assert result["missing_info"] == ["version"]
+
+
+def test_render_comment_marker_always_present():
+    result = {"category": "bug", "needs_info": False, "missing_info": [], "answer": None, "confidence": "high"}
+    body = issue_triage.render_comment(result, "en")
+    assert body.startswith("<!-- ci-agent-issue-bot v1 -->")
+
+
+def test_render_comment_needs_info_zh_lists_missing():
+    result = {
+        "category": "bug",
+        "needs_info": True,
+        "missing_info": ["版本号", "复现步骤"],
+        "answer": None,
+        "confidence": "high",
+    }
+    body = issue_triage.render_comment(result, "zh")
+    assert "版本号" in body
+    assert "复现步骤" in body
+    assert "感谢提交" in body
+
+
+def test_render_comment_needs_info_en_lists_missing():
+    result = {
+        "category": "bug",
+        "needs_info": True,
+        "missing_info": ["version", "reproduction steps"],
+        "answer": None,
+        "confidence": "high",
+    }
+    body = issue_triage.render_comment(result, "en")
+    assert "version" in body
+    assert "reproduction steps" in body
+    assert "Thanks for opening" in body
+
+
+def test_render_comment_question_answer_zh():
+    result = {
+        "category": "question",
+        "needs_info": False,
+        "missing_info": [],
+        "answer": "用 `pip install -e .` 安装。",
+        "confidence": "high",
+    }
+    body = issue_triage.render_comment(result, "zh")
+    assert "用 `pip install -e .` 安装。" in body
+    assert "自动生成" in body
+
+
+def test_render_comment_question_answer_en():
+    result = {
+        "category": "question",
+        "needs_info": False,
+        "missing_info": [],
+        "answer": "Run `pip install -e .`.",
+        "confidence": "high",
+    }
+    body = issue_triage.render_comment(result, "en")
+    assert "Run `pip install -e .`." in body
+    assert "automatically generated" in body.lower()
+
+
+def test_render_comment_short_ack_for_feature_en():
+    result = {"category": "feature", "needs_info": False, "missing_info": [], "answer": None, "confidence": "medium"}
+    body = issue_triage.render_comment(result, "en")
+    assert "feature" in body.lower()
+    assert "maintainer" in body.lower()
+
+
+def test_render_comment_escapes_html_comment_in_answer():
+    result = {
+        "category": "question",
+        "needs_info": False,
+        "missing_info": [],
+        "answer": "Try this: <!-- evil -->",
+        "confidence": "high",
+    }
+    body = issue_triage.render_comment(result, "en")
+    assert "<!-- evil -->" not in body
+    assert "evil" in body

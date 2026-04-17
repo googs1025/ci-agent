@@ -147,6 +147,84 @@ def parse_result(raw: str) -> dict:
     }
 
 
+# ─── Comment rendering ─────────────────────────────────────
+
+_CATEGORY_LABELS_ZH = {
+    "bug": "bug",
+    "question": "question",
+    "feature": "feature",
+    "duplicate": "duplicate",
+    "unknown": "issue",
+}
+_CATEGORY_LABELS_EN = _CATEGORY_LABELS_ZH
+
+_FOOTER_ZH = "此回复由机器人自动生成。"
+_FOOTER_ZH_WITH_DOCS = (
+    "此回复由机器人根据仓库文档自动生成，可能不完全准确。相关文档："
+    "[使用指南](docs/guides/zh/usage-guide.md) · [部署指南](docs/guides/zh/deployment.md)"
+)
+_FOOTER_EN = "This reply was automatically generated."
+_FOOTER_EN_WITH_DOCS = (
+    "This reply was automatically generated from the repo's docs and may not be fully accurate. "
+    "Relevant docs: [Usage Guide](docs/guides/en/usage-guide.md) · "
+    "[Deployment Guide](docs/guides/en/deployment.md)"
+)
+
+
+def _escape_answer(text: str) -> str:
+    """Neutralize HTML comments to prevent tampering with BOT_MARKER."""
+    return text.replace("<!--", "&lt;!--").replace("-->", "--&gt;")
+
+
+def render_comment(result: dict, lang: str) -> str:
+    """Render the final comment body. Always starts with BOT_MARKER."""
+    category = result["category"]
+    lines = [BOT_MARKER, ""]
+
+    if result.get("needs_info") and result.get("missing_info"):
+        if lang == "zh":
+            lines.append("感谢提交 issue。为了更快排查，请补充以下信息：")
+            lines.append("")
+            for item in result["missing_info"]:
+                lines.append(f"- {item}")
+            lines.append("")
+            lines.append("补充后维护者会尽快响应。")
+            lines.append("")
+            lines.append("---")
+            lines.append(f"> {_FOOTER_ZH}")
+        else:
+            lines.append("Thanks for opening this issue. Before we can dig in, we need a bit more info:")
+            lines.append("")
+            for item in result["missing_info"]:
+                lines.append(f"- {item}")
+            lines.append("")
+            lines.append("Once you've added these, a maintainer will follow up.")
+            lines.append("")
+            lines.append("---")
+            lines.append(f"> {_FOOTER_EN}")
+
+    elif category == "question" and result.get("answer"):
+        lines.append(_escape_answer(result["answer"]))
+        lines.append("")
+        lines.append("---")
+        lines.append(f"> {_FOOTER_ZH_WITH_DOCS if lang == 'zh' else _FOOTER_EN_WITH_DOCS}")
+
+    else:
+        cat_label = (_CATEGORY_LABELS_ZH if lang == "zh" else _CATEGORY_LABELS_EN).get(category, category)
+        if lang == "zh":
+            lines.append(f"收到，已分类为 **{cat_label}**，维护者会尽快查看。")
+            lines.append("")
+            lines.append("---")
+            lines.append(f"> {_FOOTER_ZH}")
+        else:
+            lines.append(f"Received — classified as **{cat_label}**. A maintainer will take a look soon.")
+            lines.append("")
+            lines.append("---")
+            lines.append(f"> {_FOOTER_EN}")
+
+    return "\n".join(lines)
+
+
 def main() -> int:
     print("issue_triage: placeholder main")
     return 0
