@@ -6,6 +6,7 @@ See docs/superpowers/specs/2026-04-16-issue-triage-bot-design.md.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import os
 import pathlib
 import sys
@@ -67,6 +68,31 @@ def load_context(lang: str, repo_root: pathlib.Path | None = None) -> str:
         max_content = MAX_CONTEXT_CHARS - len(truncation_msg)
         joined = joined[:max_content] + truncation_msg
     return joined
+
+
+# ─── Issue eligibility filter ──────────────────────────────
+SKIP_LABELS = {"ai-replied", "no-bot", "spam"}
+
+
+def is_eligible(issue: dict) -> bool:
+    """Apply the 6-point filter from spec §7."""
+    if "pull_request" in issue:
+        return False
+    if issue.get("state") != "open":
+        return False
+    if issue.get("comments", 0) > 0:
+        return False
+    label_names = {lbl["name"] for lbl in issue.get("labels") or []}
+    if label_names & SKIP_LABELS:
+        return False
+    if (issue.get("user") or {}).get("type") == "Bot":
+        return False
+    created = issue.get("created_at")
+    if created:
+        dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) - dt > timedelta(days=MAX_ISSUE_AGE_DAYS):
+            return False
+    return True
 
 
 def main() -> int:

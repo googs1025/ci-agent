@@ -65,3 +65,54 @@ def test_load_context_truncates_to_max_chars(tmp_path):
     (tmp_path / "README.md").write_text("X" * 50_000)
     ctx = issue_triage.load_context("en", repo_root=tmp_path)
     assert len(ctx) <= issue_triage.MAX_CONTEXT_CHARS
+
+
+from datetime import datetime, timedelta, timezone
+
+
+def _issue(**overrides) -> dict:
+    base = {
+        "number": 1,
+        "state": "open",
+        "comments": 0,
+        "labels": [],
+        "user": {"type": "User", "login": "alice"},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "title": "Test",
+        "body": "Body",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_is_eligible_happy_path():
+    assert issue_triage.is_eligible(_issue()) is True
+
+
+def test_is_eligible_rejects_pull_request():
+    assert issue_triage.is_eligible(_issue(pull_request={"url": "..."})) is False
+
+
+def test_is_eligible_rejects_closed():
+    assert issue_triage.is_eligible(_issue(state="closed")) is False
+
+
+def test_is_eligible_rejects_with_comments():
+    assert issue_triage.is_eligible(_issue(comments=1)) is False
+
+
+def test_is_eligible_rejects_ai_replied_label():
+    assert issue_triage.is_eligible(_issue(labels=[{"name": "ai-replied"}])) is False
+
+
+def test_is_eligible_rejects_no_bot_label():
+    assert issue_triage.is_eligible(_issue(labels=[{"name": "no-bot"}])) is False
+
+
+def test_is_eligible_rejects_bot_author():
+    assert issue_triage.is_eligible(_issue(user={"type": "Bot", "login": "dependabot[bot]"})) is False
+
+
+def test_is_eligible_rejects_stale_issue():
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    assert issue_triage.is_eligible(_issue(created_at=old)) is False
