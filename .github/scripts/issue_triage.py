@@ -7,6 +7,7 @@ See docs/superpowers/specs/2026-04-16-issue-triage-bot-design.md.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import httpx
 import json
 import os
 import pathlib
@@ -26,6 +27,18 @@ BOT_MARKER = "<!-- ci-agent-issue-bot v1 -->"
 MAX_ISSUE_AGE_DAYS = 30
 MAX_BODY_CHARS = 6000
 MAX_CONTEXT_CHARS = 20_000
+
+GITHUB_API = "https://api.github.com"
+
+
+def _gh_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "ci-agent-issue-triage-bot",
+    }
+
 
 # ─── Language detection ────────────────────────────────────
 def detect_language(text: str) -> str:
@@ -238,6 +251,79 @@ def derive_labels(result: dict) -> list[str]:
     if result.get("needs_info"):
         labels.append("needs-info")
     return labels
+
+
+# ─── GitHub API wrappers ───────────────────────────────────
+LABEL_SPECS = {
+    "ai-replied":        {"color": "ededed", "description": "Triaged by the issue bot (dedup marker)"},
+    "ai-parse-failed":   {"color": "d73a4a", "description": "LLM output could not be parsed — needs human review"},
+    "type:bug":          {"color": "d73a4a", "description": "Triage: bug"},
+    "type:question":     {"color": "d876e3", "description": "Triage: question"},
+    "type:feature":      {"color": "a2eeef", "description": "Triage: feature request"},
+    "type:duplicate":    {"color": "cfd3d7", "description": "Triage: likely duplicate"},
+    "needs-info":        {"color": "fbca04", "description": "Needs more information from the reporter"},
+    "no-bot":            {"color": "000000", "description": "Human opt-out — bot skips this issue"},
+}
+
+
+async def ensure_labels_exist(client: httpx.AsyncClient) -> None:
+    """Create any missing bot-managed labels. Idempotent."""
+    r = await client.get(f"{GITHUB_API}/repos/{REPO}/labels", headers=_gh_headers(), params={"per_page": 100})
+    r.raise_for_status()
+    existing = {lbl["name"] for lbl in r.json()}
+    for name, spec in LABEL_SPECS.items():
+        if name in existing:
+            continue
+        resp = await client.post(
+            f"{GITHUB_API}/repos/{REPO}/labels",
+            headers=_gh_headers(),
+            json={"name": name, **spec},
+        )
+        if resp.status_code not in (201, 422):
+            resp.raise_for_status()
+
+
+async def list_untriaged_issues(client: httpx.AsyncClient, limit: int) -> list[dict]:
+    """Return up to `limit` open issues eligible for triage."""
+    r = await client.get(
+        f"{GITHUB_API}/repos/{REPO}/issues",
+        headers=_gh_headers(),
+        params={"state": "open", "per_page": 50, "sort": "created", "direction": "desc"},
+    )
+    r.raise_for_status()
+    return [i for i in r.json() if is_eligible(i)][:limit]
+
+
+async def has_prior_bot_reply(client: httpx.AsyncClient, issue_number: int) -> bool:
+    """Layer-2 dedup: check if any comment exists or any contains BOT_MARKER."""
+    r = await client.get(
+        f"{GITHUB_API}/repos/{REPO}/issues/{issue_number}/comments",
+        headers=_gh_headers(),
+        params={"per_page": 100},
+    )
+    r.raise_for_status()
+    comments = r.json()
+    if len(comments) > 0:
+        return True
+    return any(BOT_MARKER in (c.get("body") or "") for c in comments)
+
+
+async def post_comment(client: httpx.AsyncClient, issue_number: int, body: str) -> None:
+    r = await client.post(
+        f"{GITHUB_API}/repos/{REPO}/issues/{issue_number}/comments",
+        headers=_gh_headers(),
+        json={"body": body},
+    )
+    r.raise_for_status()
+
+
+async def add_labels(client: httpx.AsyncClient, issue_number: int, labels: list[str]) -> None:
+    r = await client.post(
+        f"{GITHUB_API}/repos/{REPO}/issues/{issue_number}/labels",
+        headers=_gh_headers(),
+        json={"labels": labels},
+    )
+    r.raise_for_status()
 
 
 def main() -> int:
