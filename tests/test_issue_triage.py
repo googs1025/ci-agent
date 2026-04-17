@@ -35,3 +35,33 @@ def test_detect_language_mixed_over_threshold_is_zh():
 
 def test_detect_language_empty_defaults_to_en():
     assert issue_triage.detect_language("") == "en"
+
+
+_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "issue_triage_docs"
+
+
+def test_load_context_en_includes_readme_and_guides():
+    ctx = issue_triage.load_context("en", repo_root=_FIXTURE)
+    assert "Fake Project" in ctx
+    assert "Usage (EN)" in ctx
+    assert "Contributing" in ctx
+    assert "使用指南" not in ctx
+
+
+def test_load_context_zh_uses_chinese_guides():
+    ctx = issue_triage.load_context("zh", repo_root=_FIXTURE)
+    assert "使用指南" in ctx
+    assert "Usage (EN)" not in ctx
+    assert "Fake Project" in ctx
+
+
+def test_load_context_missing_files_soft_fail(tmp_path):
+    (tmp_path / "README.md").write_text("Only README")
+    ctx = issue_triage.load_context("en", repo_root=tmp_path)
+    assert "Only README" in ctx
+
+
+def test_load_context_truncates_to_max_chars(tmp_path):
+    (tmp_path / "README.md").write_text("X" * 50_000)
+    ctx = issue_triage.load_context("en", repo_root=tmp_path)
+    assert len(ctx) <= issue_triage.MAX_CONTEXT_CHARS
