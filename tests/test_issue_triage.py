@@ -232,3 +232,21 @@ def test_render_comment_escapes_html_comment_in_answer():
     body = issue_triage.render_comment(result, "en")
     assert "<!-- evil -->" not in body
     assert "evil" in body
+
+
+def test_derive_labels_bug_with_needs_info():
+    result = {"category": "bug", "needs_info": True, "missing_info": ["x"], "answer": None, "confidence": "high", "_parse_failed": False}
+    labels = issue_triage.derive_labels(result)
+    assert set(labels) == {"ai-replied", "type:bug", "needs-info"}
+
+
+def test_derive_labels_question_no_needs_info():
+    result = {"category": "question", "needs_info": False, "missing_info": [], "answer": "x", "confidence": "high", "_parse_failed": False}
+    labels = issue_triage.derive_labels(result)
+    assert set(labels) == {"ai-replied", "type:question"}
+
+
+def test_derive_labels_parse_failed():
+    result = {"category": "unknown", "needs_info": False, "missing_info": [], "answer": None, "confidence": "low", "_parse_failed": True}
+    labels = issue_triage.derive_labels(result)
+    assert set(labels) == {"ai-replied", "ai-parse-failed"}

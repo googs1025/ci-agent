@@ -225,6 +225,21 @@ def render_comment(result: dict, lang: str) -> str:
     return "\n".join(lines)
 
 
+# ─── Label derivation ──────────────────────────────────────
+def derive_labels(result: dict) -> list[str]:
+    """Build the label set to apply to an issue based on triage result."""
+    labels = [DEDUP_LABEL]
+    if result.get("_parse_failed"):
+        labels.append("ai-parse-failed")
+        return labels
+    category = result.get("category")
+    if category and category != "unknown":
+        labels.append(f"type:{category}")
+    if result.get("needs_info"):
+        labels.append("needs-info")
+    return labels
+
+
 def main() -> int:
     print("issue_triage: placeholder main")
     return 0
