@@ -23,6 +23,14 @@ MAX_ISSUE_AGE_DAYS = 30
 MAX_BODY_CHARS = 6000
 MAX_CONTEXT_CHARS = 20_000
 
+# ─── Language detection ────────────────────────────────────
+def detect_language(text: str) -> str:
+    """Return 'zh' if >= 15% of chars are CJK, else 'en'."""
+    if not text:
+        return "en"
+    cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
+    return "zh" if cjk / len(text) >= 0.15 else "en"
+
 
 def main() -> int:
     print("issue_triage: placeholder main")
