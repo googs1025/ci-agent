@@ -1,0 +1,3 @@
+# Contributing
+
+Fake contributing fixture.

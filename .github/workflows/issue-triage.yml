@@ -1,0 +1,45 @@
+name: Issue Triage Bot
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'     # every 6 hours
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print would-be replies without posting (true/false)'
+        type: boolean
+        default: false
+      max_issues:
+        description: 'Max issues to process this run'
+        type: number
+        default: 10
+
+permissions:
+  issues: write       # comment + label
+  contents: read      # read README/docs/CONTRIBUTING
+  models: read        # GitHub Models inference
+
+concurrency:
+  group: issue-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install httpx==0.27.*
+
+      - name: Run triage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          MAX_ISSUES: ${{ inputs.max_issues || '10' }}
+        run: python .github/scripts/issue_triage.py
