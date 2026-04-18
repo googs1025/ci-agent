@@ -1,4 +1,5 @@
 """Unit tests for .github/scripts/issue_triage.py (pure functions only)."""
+
 from __future__ import annotations
 
 import importlib.util
