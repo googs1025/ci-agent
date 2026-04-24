@@ -162,3 +162,52 @@ async def test_tool_result_preview_shown():
     output = console.file.getvalue()
     assert "read_file" in output
     assert "name: CI" in output
+
+
+@pytest.mark.asyncio
+async def test_query_task_is_cancellable():
+    """Cancelling the query task raises CancelledError cleanly."""
+    import asyncio
+    from ci_optimizer.tui.app import _query_via_server
+    from ci_optimizer.tui.renderer import StreamRenderer
+    from rich.console import Console
+    from io import StringIO
+
+    console = Console(file=StringIO(), force_terminal=True)
+    renderer = StreamRenderer(console=console)
+
+    async def _slow_lines():
+        yield "event: text"
+        yield 'data: {"content": "starting..."}'
+        await asyncio.sleep(10)  # blocks indefinitely
+
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.aiter_lines = _slow_lines
+
+    with patch("ci_optimizer.tui.app.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cm = AsyncMock()
+        mock_client_cm.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client_cm
+
+        mock_stream_cm = AsyncMock()
+        mock_stream_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_stream_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_client.stream = MagicMock(return_value=mock_stream_cm)
+
+        ctx = MagicMock()
+        ctx.display_name = "owner/repo"
+        ctx.branch = "main"
+        ctx.local_path = "/tmp/repo"
+        config = MagicMock()
+        config.model = "claude-sonnet-4-6"
+
+        task = asyncio.create_task(
+            _query_via_server("q", ctx, config, renderer, [], "http://localhost:8000")
+        )
+        await asyncio.sleep(0.05)  # let it start
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

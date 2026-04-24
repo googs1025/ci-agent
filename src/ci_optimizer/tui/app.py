@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import os
 import subprocess
@@ -84,8 +86,6 @@ def _start_server_background(port: int = 8000) -> subprocess.Popen:
 
 async def _ensure_server(server_url: str, console: Console) -> subprocess.Popen | None:
     """Ensure the server is running. Start it automatically if not."""
-    import asyncio
-
     if await _check_server(server_url):
         return None  # already running externally
 
@@ -382,8 +382,20 @@ async def run_tui(repo_path: Path | None = None) -> None:
                 continue
 
             # Natural language → server /api/chat
+            _query_task = None
             try:
-                await _query_via_server(user_input, ctx, config, renderer, conversation, server_url)
+                _query_task = asyncio.create_task(
+                    _query_via_server(user_input, ctx, config, renderer, conversation, server_url)
+                )
+                await _query_task
+            except KeyboardInterrupt:
+                if _query_task and not _query_task.done():
+                    _query_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await _query_task
+                console.print("\n[dim]已中断[/dim]")
+            except asyncio.CancelledError:
+                console.print("\n[dim]已中断[/dim]")
             except Exception as e:
                 console.print(f"\n[red]错误: {e}[/red]")
     finally:
