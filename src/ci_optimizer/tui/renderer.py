@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from rich.console import Console
-from rich.text import Text
 
 
 @dataclass

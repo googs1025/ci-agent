@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _make_ctx():
@@ -88,9 +87,10 @@ class TestSSEEventTypes:
 @pytest.mark.asyncio
 async def test_markdown_rendered_after_stream():
     """Text chunks accumulate; Markdown() is called on done, not raw printed."""
+    from rich.console import Console
+
     from ci_optimizer.tui.app import _query_via_server
     from ci_optimizer.tui.renderer import StreamRenderer
-    from rich.console import Console
 
     console = Console(file=StringIO(), force_terminal=True, highlight=False)
     renderer = StreamRenderer(console=console)
@@ -114,9 +114,10 @@ async def test_markdown_rendered_after_stream():
 @pytest.mark.asyncio
 async def test_cost_accumulated_in_stats():
     """renderer.stats.total_cost_usd should reflect token cost after done."""
+    from rich.console import Console
+
     from ci_optimizer.tui.app import _query_via_server
     from ci_optimizer.tui.renderer import StreamRenderer
-    from rich.console import Console
 
     console = Console(file=StringIO(), force_terminal=True)
     renderer = StreamRenderer(console=console)
@@ -143,9 +144,10 @@ def test_estimate_cost_unknown_model():
 @pytest.mark.asyncio
 async def test_tool_result_preview_shown():
     """tool_result events should show a green checkmark and preview."""
+    from rich.console import Console
+
     from ci_optimizer.tui.app import _query_via_server
     from ci_optimizer.tui.renderer import StreamRenderer
-    from rich.console import Console
 
     console = Console(file=StringIO(), force_terminal=True, highlight=False)
     renderer = StreamRenderer(console=console)
@@ -168,11 +170,13 @@ async def test_tool_result_preview_shown():
 @pytest.mark.asyncio
 async def test_handle_write_proposals_uses_panels_confirm():
     """_handle_write_proposals should delegate to panels.confirm_action."""
-    from ci_optimizer.tui.app import _handle_write_proposals
-    from ci_optimizer.tui.renderer import StreamRenderer
-    from ci_optimizer.tui.panels import ConfirmChoice
-    from rich.console import Console
     from io import StringIO
+
+    from rich.console import Console
+
+    from ci_optimizer.tui.app import _handle_write_proposals
+    from ci_optimizer.tui.panels import ConfirmChoice
+    from ci_optimizer.tui.renderer import StreamRenderer
 
     console = Console(file=StringIO(), force_terminal=True)
     renderer = StreamRenderer(console=console)
@@ -208,10 +212,12 @@ async def test_handle_write_proposals_uses_panels_confirm():
 async def test_query_task_is_cancellable():
     """Cancelling the query task raises CancelledError cleanly."""
     import asyncio
+    from io import StringIO
+
+    from rich.console import Console
+
     from ci_optimizer.tui.app import _query_via_server
     from ci_optimizer.tui.renderer import StreamRenderer
-    from rich.console import Console
-    from io import StringIO
 
     console = Console(file=StringIO(), force_terminal=True)
     renderer = StreamRenderer(console=console)

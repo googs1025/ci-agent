@@ -68,8 +68,9 @@ class TestExecute:
         assert result.handled is True  # still handled, just prints error
 
     def test_compact_trims_conversation(self, deps):
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
 
         console = Console(file=StringIO())
         conversation = [{"role": "user", "content": f"msg {i}"} for i in range(20)]
@@ -88,8 +89,9 @@ class TestExecute:
         assert "压缩" in output
 
     def test_compact_no_op_on_short_conversation(self, deps):
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
 
         console = Console(file=StringIO())
         conversation = [

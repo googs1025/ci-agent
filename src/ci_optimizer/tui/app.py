@@ -15,12 +15,12 @@ from rich.panel import Panel
 from rich.text import Text
 
 from ci_optimizer.config import AgentConfig
+from ci_optimizer.tui import panels
 
 from .commands import execute, is_command
 from .context import RepoContext, confirm_repo, detect_repo
 from .renderer import StreamRenderer
 from .repl import build_session
-from ci_optimizer.tui import panels
 
 VERSION = "0.2.0"
 
