@@ -165,6 +165,45 @@ async def test_tool_result_preview_shown():
 
 
 @pytest.mark.asyncio
+async def test_handle_write_proposals_uses_panels_confirm():
+    """_handle_write_proposals should delegate to panels.confirm_action."""
+    from ci_optimizer.tui.app import _handle_write_proposals
+    from ci_optimizer.tui.renderer import StreamRenderer
+    from ci_optimizer.tui.panels import ConfirmChoice
+    from rich.console import Console
+    from io import StringIO
+
+    console = Console(file=StringIO(), force_terminal=True)
+    renderer = StreamRenderer(console=console)
+
+    proposals = [
+        {
+            "action": "edit_file",
+            "path": ".github/workflows/ci.yml",
+            "diff": "--- a\n+++ b\n-ubuntu-latest\n+ubuntu-22.04",
+            "added": 1,
+            "removed": 1,
+            "tool_name": "edit_file",
+            "tool_input": {
+                "path": ".github/workflows/ci.yml",
+                "old_string": "ubuntu-latest",
+                "new_string": "ubuntu-22.04",
+            },
+        }
+    ]
+
+    ctx = MagicMock()
+    ctx.local_path = "/tmp/repo"
+
+    with patch("ci_optimizer.tui.app.panels.confirm_action", new=AsyncMock(return_value=ConfirmChoice.NO)) as mock_confirm:
+        await _handle_write_proposals(proposals, ctx, renderer, "http://localhost:8000")
+        mock_confirm.assert_called_once()
+
+    output = console.file.getvalue()
+    assert "取消" in output
+
+
+@pytest.mark.asyncio
 async def test_query_task_is_cancellable():
     """Cancelling the query task raises CancelledError cleanly."""
     import asyncio

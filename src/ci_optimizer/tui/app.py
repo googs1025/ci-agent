@@ -20,6 +20,7 @@ from .commands import execute, is_command
 from .context import RepoContext, confirm_repo, detect_repo
 from .renderer import StreamRenderer
 from .repl import build_session
+from ci_optimizer.tui import panels
 
 VERSION = "0.2.0"
 
@@ -133,16 +134,12 @@ def _tool_status(name: str, inputs: dict) -> str:
 
 async def _handle_write_proposals(
     proposals: list[dict],
-    ctx: RepoContext,
-    renderer: StreamRenderer,
+    ctx: "RepoContext",
+    renderer: "StreamRenderer",
     server_url: str,
 ) -> None:
-    """Claude Code 风格：先展示每个文件的 diff，再问确认。"""
-    from prompt_toolkit import PromptSession
-    from rich.syntax import Syntax
-
+    """Route write proposals through panels.confirm_action for unified UX."""
     console = renderer.console
-    session = PromptSession()
 
     file_proposals = [p for p in proposals if p.get("action") in ("write_file", "edit_file")]
     git_proposals = [p for p in proposals if p.get("action") == "git_commit"]
@@ -150,46 +147,32 @@ async def _handle_write_proposals(
     if not file_proposals and not git_proposals:
         return
 
-    # ── 逐个文件展示 diff ──
-    for p in file_proposals:
-        path = p.get("path", "?")
-        diff = p.get("diff", "")
-        added = p.get("added", 0)
-        removed = p.get("removed", 0)
+    action = panels.WriteAction(
+        files=[
+            panels.FileChange(
+                path=p["path"],
+                added=p.get("added", 0),
+                removed=p.get("removed", 0),
+                diff=p.get("diff", ""),
+            )
+            for p in file_proposals
+        ],
+        commit_message=git_proposals[0]["message"] if git_proposals else None,
+    )
 
-        console.print()
-        console.print(f"[bold yellow]✎ {path}[/bold yellow]  [dim](+{added}, -{removed})[/dim]")
-        if diff:
-            console.print(Syntax(diff, "diff", theme="monokai", line_numbers=False))
-        else:
-            console.print("[dim]  (no diff available)[/dim]")
+    choice = await panels.confirm_action(action, console=console)
 
-    if git_proposals:
-        for gp in git_proposals:
-            console.print(f"\n[bold]📦 Git commit:[/bold] {gp.get('message', '?')}")
+    if choice == panels.ConfirmChoice.NO:
+        console.print("[dim]已取消写入操作[/dim]")
+        return
 
-    # ── 确认 ──
-    console.print()
-    console.print("[bold][y][/bold] 应用修改   [bold][n][/bold] 取消   [bold][e][/bold] 只改文件不 commit")
+    # EDIT_ONLY drops git proposals
+    apply_proposals = proposals if choice == panels.ConfirmChoice.YES else file_proposals
 
-    while True:
-        answer = (await session.prompt_async("请输入 y/n/e > ")).strip().lower()
-        if answer in ("y", "yes", "确认"):
-            break
-        if answer in ("n", "no", "取消"):
-            console.print("[dim]已取消写入操作[/dim]")
-            return
-        if answer in ("e", "edit", "只修改"):
-            # 去掉 git_commit
-            proposals = [p for p in proposals if p.get("action") != "git_commit"]
-            break
-        console.print("[yellow]请输入 y/n/e[/yellow]")
-
-    # ── 执行 ──
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{server_url}/api/chat/apply",
-            json={"proposals": proposals, "repo_root": str(ctx.local_path)},
+            json={"proposals": apply_proposals, "repo_root": str(ctx.local_path)},
         )
         if resp.status_code == 200:
             results = resp.json().get("results", [])
