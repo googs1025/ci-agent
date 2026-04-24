@@ -87,24 +87,26 @@ def _start_server_background(port: int = 8000) -> subprocess.Popen:
 
 async def _ensure_server(server_url: str, console: Console) -> subprocess.Popen | None:
     """Ensure the server is running. Start it automatically if not."""
+    from rich.live import Live
+    from rich.text import Text
+
     if await _check_server(server_url):
-        return None  # already running externally
+        return None
 
-    # Extract port from URL
     from urllib.parse import urlparse
-
     parsed = urlparse(server_url)
     port = parsed.port or 8000
 
-    console.print(f"[dim]  正在启动 CI Agent Server (port {port})...[/dim]")
     proc = _start_server_background(port)
 
-    # Wait for server to be ready (up to 10s)
-    for _ in range(20):
-        await asyncio.sleep(0.5)
-        if await _check_server(server_url):
-            console.print("[green]  ✓ Server 已启动[/green]")
-            return proc
+    with Live(console=console, refresh_per_second=8) as live:
+        for i in range(20):
+            elapsed = i * 0.5
+            live.update(Text(f"  ⠸ 正在启动 Server (port {port}) … {elapsed:.0f}s", style="dim"))
+            await asyncio.sleep(0.5)
+            if await _check_server(server_url):
+                live.update(Text("  ✓ Server 已启动", style="green"))
+                return proc
 
     proc.terminate()
     raise RuntimeError("Server 启动超时，请手动运行: ci-agent serve")
