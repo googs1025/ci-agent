@@ -33,7 +33,7 @@ def build_session() -> PromptSession:
 
     @kb.add("escape", "enter")
     def _newline(event):
-        """Meta+Enter: insert a newline for multi-line input."""
+        """Meta+Enter (Alt+Enter): insert a newline for multi-line input."""
         event.current_buffer.insert_text("\n")
 
     session: PromptSession = PromptSession(
@@ -41,8 +41,7 @@ def build_session() -> PromptSession:
         history=history,
         completer=completer,
         key_bindings=kb,
-        multiline=True,
-        prompt_continuation="  ",
+        multiline=False,   # Enter submits; use Alt+Enter to insert newline
         enable_history_search=True,
     )
 
