@@ -10,6 +10,7 @@ import pytest
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _make_ctx():
     ctx = MagicMock()
     ctx.display_name = "owner/repo"
@@ -50,6 +51,7 @@ def _patch_httpx(sse_lines):
 
 
 # ── existing tests ────────────────────────────────────────────────────────────
+
 
 def make_sse(event: str, data: dict) -> list[str]:
     """Simulate lines returned by aiter_lines() for SSE."""
@@ -138,6 +140,7 @@ async def test_cost_accumulated_in_stats():
 def test_estimate_cost_unknown_model():
     """Unknown model returns 0.0."""
     from ci_optimizer.tui.app import _estimate_cost
+
     assert _estimate_cost("gpt-4o", 1000, 500) == 0.0
 
 
@@ -250,9 +253,7 @@ async def test_query_task_is_cancellable():
         config = MagicMock()
         config.model = "claude-sonnet-4-6"
 
-        task = asyncio.create_task(
-            _query_via_server("q", ctx, config, renderer, [], "http://localhost:8000")
-        )
+        task = asyncio.create_task(_query_via_server("q", ctx, config, renderer, [], "http://localhost:8000"))
         await asyncio.sleep(0.05)  # let it start
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

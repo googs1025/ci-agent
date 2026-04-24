@@ -28,9 +28,9 @@ DEFAULT_SERVER_URL = "http://localhost:8000"
 
 _COST_TABLE = {
     # (input $/1M tokens, output $/1M tokens)
-    "claude-opus":   (15.0, 75.0),
-    "claude-sonnet": (3.0,  15.0),
-    "claude-haiku":  (0.25, 1.25),
+    "claude-opus": (15.0, 75.0),
+    "claude-sonnet": (3.0, 15.0),
+    "claude-haiku": (0.25, 1.25),
 }
 
 
@@ -94,6 +94,7 @@ async def _ensure_server(server_url: str, console: Console) -> subprocess.Popen 
         return None
 
     from urllib.parse import urlparse
+
     parsed = urlparse(server_url)
     port = parsed.port or 8000
 
@@ -268,6 +269,7 @@ async def _query_via_server(
                             renderer.console.print()
                         if collected_text:
                             from rich.markdown import Markdown
+
                             renderer.console.print("[bold green]AI ›[/bold green]", highlight=False)
                             renderer.console.print(Markdown(collected_text))
                         usage = data.get("usage", {})
@@ -280,9 +282,7 @@ async def _query_via_server(
                         renderer.stats.total_cost_usd += cost_usd
                         turns_str = f" · {turns} 轮" if turns > 1 else ""
                         cost_str = f" · ${cost_usd:.4f}" if cost_usd > 0 else ""
-                        renderer.console.print(
-                            f"[dim]{model_used} · {input_t}↑ {output_t}↓{turns_str}{cost_str}[/dim]"
-                        )
+                        renderer.console.print(f"[dim]{model_used} · {input_t}↑ {output_t}↓{turns_str}{cost_str}[/dim]")
 
                     elif event_type == "error":
                         raise RuntimeError(data.get("message", "Unknown server error"))
@@ -377,9 +377,7 @@ async def run_tui(repo_path: Path | None = None) -> None:
             # Natural language → server /api/chat
             _query_task = None
             try:
-                _query_task = asyncio.create_task(
-                    _query_via_server(user_input, ctx, config, renderer, conversation, server_url)
-                )
+                _query_task = asyncio.create_task(_query_via_server(user_input, ctx, config, renderer, conversation, server_url))
                 await _query_task
             except KeyboardInterrupt:
                 if _query_task and not _query_task.done():

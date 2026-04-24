@@ -41,7 +41,7 @@ def build_session() -> PromptSession:
         history=history,
         completer=completer,
         key_bindings=kb,
-        multiline=False,   # Enter submits; use Alt+Enter to insert newline
+        multiline=False,  # Enter submits; use Alt+Enter to insert newline
         enable_history_search=True,
     )
 

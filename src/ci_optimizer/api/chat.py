@@ -125,11 +125,14 @@ async def _run_agentic_loop(
                 yield _sse_event("text", {"content": block.text})
             elif block.type == "tool_use":
                 tool_use_blocks.append(block)
-                yield _sse_event("tool_use", {
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
+                yield _sse_event(
+                    "tool_use",
+                    {
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    },
+                )
 
         # 无 tool use，结束循环
         if response.stop_reason != "tool_use" or not tool_use_blocks:
@@ -149,20 +152,26 @@ async def _run_agentic_loop(
                 preview["tool_input"] = wb.input
                 proposals.append(preview)
 
-            yield _sse_event("write_proposal", {
-                "proposals": proposals,
-                "pending_tool_ids": [wb.id for wb in write_blocks],
-                "assistant_content": _serialize_content(response.content),
-            })
+            yield _sse_event(
+                "write_proposal",
+                {
+                    "proposals": proposals,
+                    "pending_tool_ids": [wb.id for wb in write_blocks],
+                    "assistant_content": _serialize_content(response.content),
+                },
+            )
 
             # 暂停循环——TUI 需要发 /api/chat/apply 来继续
             # 累计 usage 并返回 done（带 pending 标记）
-            yield _sse_event("done", {
-                "usage": {"input_tokens": total_input, "output_tokens": total_output},
-                "model": response.model,
-                "turns": turn + 1,
-                "pending_writes": True,
-            })
+            yield _sse_event(
+                "done",
+                {
+                    "usage": {"input_tokens": total_input, "output_tokens": total_output},
+                    "model": response.model,
+                    "turns": turn + 1,
+                    "pending_writes": True,
+                },
+            )
             return  # 结束生成器，等待 apply 请求
 
         # 只读工具——直接执行
@@ -174,26 +183,33 @@ async def _run_agentic_loop(
                 tool_block.input,
                 repo_root=repo_root,
             )
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tool_block.id,
-                "content": result,
-            })
-            yield _sse_event("tool_result", {
-                "id": tool_block.id,
-                "name": tool_block.name,
-                "result_preview": result[:200] + "..." if len(result) > 200 else result,
-            })
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_block.id,
+                    "content": result,
+                }
+            )
+            yield _sse_event(
+                "tool_result",
+                {
+                    "id": tool_block.id,
+                    "name": tool_block.name,
+                    "result_preview": result[:200] + "..." if len(result) > 200 else result,
+                },
+            )
 
         messages.append({"role": "user", "content": tool_results})
 
     # 如果 loop 因轮数耗尽而退出（stop_reason 仍是 tool_use），强制做一次文字总结
     if response.stop_reason == "tool_use":
         messages.append({"role": "assistant", "content": response.content})
-        messages.append({
-            "role": "user",
-            "content": "你已用完工具调用次数。请根据目前收集到的信息，直接给出结论和建议（不要再调用工具）。",
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": "你已用完工具调用次数。请根据目前收集到的信息，直接给出结论和建议（不要再调用工具）。",
+            }
+        )
         summary_resp = await client.messages.create(
             model=model,
             max_tokens=2048,
@@ -207,11 +223,14 @@ async def _run_agentic_loop(
                 yield _sse_event("text", {"content": block.text})
 
     # 完成事件
-    yield _sse_event("done", {
-        "usage": {"input_tokens": total_input, "output_tokens": total_output},
-        "model": response.model,
-        "turns": turn + 1,
-    })
+    yield _sse_event(
+        "done",
+        {
+            "usage": {"input_tokens": total_input, "output_tokens": total_output},
+            "model": response.model,
+            "turns": turn + 1,
+        },
+    )
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────────────

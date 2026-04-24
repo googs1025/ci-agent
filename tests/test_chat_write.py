@@ -36,9 +36,12 @@ class TestWriteToolInLoop:
 
         events = []
         async for event in _run_agentic_loop(
-            client=mock_client, model="claude-3-5-sonnet", system="test",
+            client=mock_client,
+            model="claude-3-5-sonnet",
+            system="test",
             messages=[{"role": "user", "content": "写文件"}],
-            repo_root=repo, max_turns=5,
+            repo_root=repo,
+            max_turns=5,
         ):
             events.append(event)
 
@@ -75,9 +78,12 @@ class TestWriteToolInLoop:
 
         events = []
         async for event in _run_agentic_loop(
-            client=mock_client, model="claude-3-5-sonnet", system="test",
+            client=mock_client,
+            model="claude-3-5-sonnet",
+            system="test",
             messages=[{"role": "user", "content": "编辑文件"}],
-            repo_root=repo, max_turns=5,
+            repo_root=repo,
+            max_turns=5,
         ):
             events.append(event)
 
@@ -116,9 +122,12 @@ class TestWriteToolInLoop:
 
         events = []
         async for event in _run_agentic_loop(
-            client=mock_client, model="claude-3-5-sonnet", system="test",
+            client=mock_client,
+            model="claude-3-5-sonnet",
+            system="test",
             messages=[{"role": "user", "content": "列出 workflows"}],
-            repo_root=repo, max_turns=5,
+            repo_root=repo,
+            max_turns=5,
         ):
             events.append(event)
 

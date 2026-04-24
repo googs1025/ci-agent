@@ -271,12 +271,14 @@ def _preview_write_file(inputs: dict, repo_root: Path) -> dict:
 
     if path.exists():
         old_content = path.read_text(errors="replace")
-        diff_lines = list(difflib.unified_diff(
-            old_content.splitlines(keepends=True),
-            new_content.splitlines(keepends=True),
-            fromfile=f"a/{rel_path}",
-            tofile=f"b/{rel_path}",
-        ))
+        diff_lines = list(
+            difflib.unified_diff(
+                old_content.splitlines(keepends=True),
+                new_content.splitlines(keepends=True),
+                fromfile=f"a/{rel_path}",
+                tofile=f"b/{rel_path}",
+            )
+        )
     else:
         diff_lines = ["--- /dev/null\n", f"+++ b/{rel_path}\n"]
         diff_lines += [f"+{line}\n" for line in new_content.splitlines()]
@@ -303,12 +305,14 @@ def _preview_edit_file(inputs: dict, repo_root: Path) -> dict:
         return {"action": "edit_file", "path": rel_path, "error": f"old_string not found in {rel_path}"}
 
     new_content = old_content.replace(old_string, new_string, 1)
-    diff_lines = list(difflib.unified_diff(
-        old_content.splitlines(keepends=True),
-        new_content.splitlines(keepends=True),
-        fromfile=f"a/{rel_path}",
-        tofile=f"b/{rel_path}",
-    ))
+    diff_lines = list(
+        difflib.unified_diff(
+            old_content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"a/{rel_path}",
+            tofile=f"b/{rel_path}",
+        )
+    )
     diff_text = "".join(diff_lines)
     added = sum(1 for ln in diff_lines if ln.startswith("+") and not ln.startswith("+++"))
     removed = sum(1 for ln in diff_lines if ln.startswith("-") and not ln.startswith("---"))
@@ -423,9 +427,7 @@ def _exec_list_workflows(repo_root: Path) -> str:
         try:
             data = yaml.safe_load(f.read_text())
             name = data.get("name", f.stem)
-            triggers = (
-                list(data.get("on", {}).keys()) if isinstance(data.get("on"), dict) else [str(data.get("on", "?"))]
-            )
+            triggers = list(data.get("on", {}).keys()) if isinstance(data.get("on"), dict) else [str(data.get("on", "?"))]
             jobs = list(data.get("jobs", {}).keys())
             results.append(f"{rel}\n  name: {name}\n  triggers: {', '.join(triggers)}\n  jobs: {', '.join(jobs)}")
         except Exception:
@@ -473,16 +475,25 @@ async def _exec_git_commit(inputs: dict, repo_root: Path) -> str:
         validate_path(f, repo_root=repo_root)
 
     add_proc = await asyncio.create_subprocess_exec(
-        "git", "add", *files,
-        cwd=repo_root, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "git",
+        "add",
+        *files,
+        cwd=repo_root,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     _, add_err = await asyncio.wait_for(add_proc.communicate(), timeout=10)
     if add_proc.returncode != 0:
         return f"Error: git add failed: {add_err.decode()}"
 
     commit_proc = await asyncio.create_subprocess_exec(
-        "git", "commit", "-m", message,
-        cwd=repo_root, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "git",
+        "commit",
+        "-m",
+        message,
+        cwd=repo_root,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     commit_out, commit_err = await asyncio.wait_for(commit_proc.communicate(), timeout=10)
     if commit_proc.returncode != 0:

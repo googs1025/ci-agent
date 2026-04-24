@@ -1,6 +1,5 @@
 """测试 api.tools —— 工具定义和执行。"""
 
-
 from pathlib import Path
 
 import pytest
@@ -93,8 +92,6 @@ class TestExecuteTool:
         assert "outside" in result.lower() or "error" in result.lower()
 
 
-
-
 class TestWriteTools:
     @pytest.fixture()
     def repo(self, tmp_path):
@@ -119,14 +116,22 @@ class TestWriteTools:
         assert not Path("/etc/evil.txt").exists()
 
     async def test_edit_file(self, repo):
-        result = await execute_tool("edit_file", {"path": ".github/workflows/ci.yml", "old_string": "runs-on: ubuntu-latest", "new_string": "runs-on: ubuntu-22.04"}, repo_root=repo)
+        result = await execute_tool(
+            "edit_file",
+            {"path": ".github/workflows/ci.yml", "old_string": "runs-on: ubuntu-latest", "new_string": "runs-on: ubuntu-22.04"},
+            repo_root=repo,
+        )
         assert "edited" in result.lower()
         content = (repo / ".github/workflows/ci.yml").read_text()
         assert "ubuntu-22.04" in content
         assert "ubuntu-latest" not in content
 
     async def test_edit_file_old_string_not_found(self, repo):
-        result = await execute_tool("edit_file", {"path": ".github/workflows/ci.yml", "old_string": "this does not exist", "new_string": "replacement"}, repo_root=repo)
+        result = await execute_tool(
+            "edit_file",
+            {"path": ".github/workflows/ci.yml", "old_string": "this does not exist", "new_string": "replacement"},
+            repo_root=repo,
+        )
         assert "not found" in result.lower()
 
 
@@ -134,6 +139,7 @@ class TestGitTools:
     @pytest.fixture()
     def git_repo(self, tmp_path):
         import subprocess
+
         subprocess.run(["git", "init", str(tmp_path)], capture_output=True, check=True)
         subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "test@test.com"], capture_output=True, check=True)
         subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "Test"], capture_output=True, check=True)
@@ -147,9 +153,12 @@ class TestGitTools:
 
     async def test_git_commit(self, git_repo):
         (git_repo / ".github" / "workflows" / "ci.yml").write_text("name: CI\non: push\njobs: {}")
-        result = await execute_tool("git_commit", {"message": "fix: update ci.yml", "files": [".github/workflows/ci.yml"]}, repo_root=git_repo)
+        result = await execute_tool(
+            "git_commit", {"message": "fix: update ci.yml", "files": [".github/workflows/ci.yml"]}, repo_root=git_repo
+        )
         assert "commit" in result.lower() or "success" in result.lower()
         import subprocess
+
         log = subprocess.run(["git", "-C", str(git_repo), "log", "--oneline", "-1"], capture_output=True, text=True)
         assert "fix: update ci.yml" in log.stdout
 
