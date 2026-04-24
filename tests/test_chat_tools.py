@@ -115,4 +115,5 @@ class TestAgenticLoop:
         ):
             events.append(event)
 
-        assert mock_client.messages.create.call_count <= 2
+        # max_turns=2 loop calls + 1 forced summary call when loop exhausts
+        assert mock_client.messages.create.call_count <= 3
