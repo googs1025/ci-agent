@@ -108,6 +108,7 @@ async def test_markdown_rendered_after_stream():
     output = console.file.getvalue()
     # "Hello" heading should appear; raw "##" should not survive rendering
     assert "Hello" in output
+    assert "##" not in output  # heading markers consumed by Rich Markdown
 
 
 @pytest.mark.asyncio
