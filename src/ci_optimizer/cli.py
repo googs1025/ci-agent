@@ -18,6 +18,11 @@ def parse_args():
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # chat command (TUI mode)
+    chat = subparsers.add_parser("chat", help="Interactive TUI mode (default when no command given)")
+    chat.add_argument("--repo", help="Repository path (default: current directory)")
+    chat.add_argument("--model", "-m", help="Model to use")
+
     # analyze command
     analyze = subparsers.add_parser("analyze", help="Analyze a repository's CI pipelines")
     analyze.add_argument("repo", help="Local path or GitHub URL of the repository")
@@ -539,6 +544,20 @@ def run_skills(args):
         sys.exit(1)
 
 
+def run_chat(args):
+    from pathlib import Path
+
+    from ci_optimizer.tui.app import run_tui
+
+    repo_path = Path(args.repo) if hasattr(args, "repo") and args.repo else None
+
+    # Apply model override
+    if hasattr(args, "model") and args.model:
+        os.environ["CI_AGENT_MODEL"] = args.model
+
+    asyncio.run(run_tui(repo_path=repo_path))
+
+
 def main():
     load_dotenv()
     args = parse_args()
@@ -551,10 +570,24 @@ def main():
         run_config(args)
     elif args.command == "skills":
         run_skills(args)
+    elif args.command == "chat":
+        run_chat(args)
     else:
-        print("Usage: ci-agent {analyze|serve|config|skills} [options]")
-        print("Run 'ci-agent --help' for more information.")
-        sys.exit(1)
+        # No command given → show usage guide
+        print("🤖 CI Agent — AI-powered CI/CD pipeline analyzer\n")
+        print("使用方式:")
+        print("  ci-agent serve              启动后端 Server (TUI 和 Web 都需要)")
+        print("  ci-agent chat               启动 TUI 交互模式 (连接 Server)")
+        print("  ci-agent analyze <repo>     一次性分析 (不需要 Server)")
+        print("  ci-agent config show        查看配置")
+        print("  ci-agent skills list        查看分析技能")
+        print()
+        print("快速开始:")
+        print("  1. 启动 Server:   ci-agent serve")
+        print("  2. 新终端启动 TUI: ci-agent chat")
+        print("  3. 或启动 Web:    cd web && npm run dev")
+        print()
+        print("运行 'ci-agent --help' 查看所有命令")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ci_optimizer.api.chat import chat_router
 from ci_optimizer.api.diagnose import diagnose_router
 from ci_optimizer.api.routes import router
 from ci_optimizer.api.webhooks import webhook_router
@@ -68,6 +69,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(webhook_router)
 app.include_router(diagnose_router)
+app.include_router(chat_router)
 
 
 @app.get("/health", tags=["health"])

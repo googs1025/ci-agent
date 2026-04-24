@@ -12,7 +12,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [系统架构](design/architecture.md) | 整体架构、模块划分、数据流设计 |
+| [系统架构](design/architecture.md) | 整体架构、TUI/Chat API/Tools 模块、数据流设计 |
 | [Skill 系统设计](design/skill-system.md) | 声明式 Skill 定义、动态发现、按需加载机制 |
 | [Webhook 设计](design/webhook.md) | GitHub Webhook 实时 CI 用量追踪技术方案（草案） |
 | [Failure Triage 设计](design/failure-triage.md) | 单次失败 AI 诊断：skill 契约、DB 模型、成本控制、前端 UX |

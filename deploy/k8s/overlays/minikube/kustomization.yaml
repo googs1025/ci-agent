@@ -30,3 +30,11 @@ patches:
     target:
       kind: Deployment
       name: ci-agent-frontend
+  # Expose frontend as NodePort so minikube service can reach it
+  - patch: |-
+      - op: add
+        path: /spec/type
+        value: NodePort
+    target:
+      kind: Service
+      name: ci-agent-frontend

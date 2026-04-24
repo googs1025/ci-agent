@@ -268,6 +268,7 @@ async def _query_via_server(
                             renderer.console.print()
                         if collected_text:
                             from rich.markdown import Markdown
+                            renderer.console.print("[bold green]AI ›[/bold green]", highlight=False)
                             renderer.console.print(Markdown(collected_text))
                         usage = data.get("usage", {})
                         model_used = data.get("model", config.model)
@@ -369,6 +370,9 @@ async def run_tui(repo_path: Path | None = None) -> None:
                     if new_ctx:
                         ctx = new_ctx
                 continue
+
+            # Echo user message with distinct style before sending
+            console.print(f"[bold cyan]You ›[/bold cyan] {user_input}", highlight=False)
 
             # Natural language → server /api/chat
             _query_task = None
