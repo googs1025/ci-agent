@@ -204,6 +204,10 @@ async def _query_via_server(
         "repo_root": str(ctx.local_path),
     }
 
+    # Immediate visual feedback — shown before the HTTP request even starts
+    renderer.console.print()
+    renderer.console.print("[dim]  ⠸[/dim] ", end="", highlight=False)
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=10)) as client:
         async with client.stream(
             "POST",
