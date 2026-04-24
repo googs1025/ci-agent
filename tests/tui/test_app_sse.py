@@ -96,12 +96,10 @@ async def test_markdown_rendered_after_stream():
     renderer = StreamRenderer(console=console)
 
     sse_lines = [
-        "event: text\n",
-        'data: {"content": "## Hello\\n\\n- item1"}\n',
-        "\n",
-        "event: done\n",
-        'data: {"usage": {"input_tokens": 10, "output_tokens": 5}, "model": "claude-sonnet-4-6", "turns": 1}\n',
-        "\n",
+        "event: text",
+        'data: {"content": "## Hello\\n\\n- item1"}',
+        "event: done",
+        'data: {"usage": {"input_tokens": 10, "output_tokens": 5}, "model": "claude-sonnet-4-6", "turns": 1}',
     ]
 
     with _patch_httpx(sse_lines):
@@ -123,9 +121,8 @@ async def test_cost_accumulated_in_stats():
     renderer = StreamRenderer(console=console)
 
     sse_lines = [
-        "event: done\n",
-        'data: {"usage": {"input_tokens": 1000, "output_tokens": 500}, "model": "claude-sonnet-4-6", "turns": 1}\n',
-        "\n",
+        "event: done",
+        'data: {"usage": {"input_tokens": 1000, "output_tokens": 500}, "model": "claude-sonnet-4-6", "turns": 1}',
     ]
 
     with _patch_httpx(sse_lines):
@@ -136,8 +133,7 @@ async def test_cost_accumulated_in_stats():
     assert abs(renderer.stats.total_cost_usd - 0.0105) < 0.001
 
 
-@pytest.mark.asyncio
-async def test_estimate_cost_unknown_model():
+def test_estimate_cost_unknown_model():
     """Unknown model returns 0.0."""
     from ci_optimizer.tui.app import _estimate_cost
     assert _estimate_cost("gpt-4o", 1000, 500) == 0.0
@@ -154,12 +150,10 @@ async def test_tool_result_preview_shown():
     renderer = StreamRenderer(console=console)
 
     sse_lines = [
-        "event: tool_result\n",
-        'data: {"name": "read_file", "result_preview": "name: CI"}\n',
-        "\n",
-        "event: done\n",
-        'data: {"usage": {"input_tokens": 5, "output_tokens": 2}, "model": "claude-haiku-4-5", "turns": 1}\n',
-        "\n",
+        "event: tool_result",
+        'data: {"name": "read_file", "result_preview": "name: CI"}',
+        "event: done",
+        'data: {"usage": {"input_tokens": 5, "output_tokens": 2}, "model": "claude-haiku-4-5", "turns": 1}',
     ]
 
     with _patch_httpx(sse_lines):

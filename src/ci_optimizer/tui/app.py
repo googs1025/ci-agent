@@ -265,8 +265,11 @@ async def _query_via_server(
                     elif event_type == "tool_result":
                         tool_name = data.get("name", "?")
                         preview = data.get("result_preview", "")
-                        preview_short = preview[:60] + "…" if len(preview) > 60 else preview
-                        renderer.console.print(f"  [green]✓[/green] [dim]{tool_name} → {preview_short}[/dim]")
+                        if preview:
+                            preview_short = preview[:60] + "…" if len(preview) > 60 else preview
+                            renderer.console.print(f"  [green]✓[/green] [dim]{tool_name} → {preview_short}[/dim]")
+                        else:
+                            renderer.console.print(f"  [green]✓[/green] [dim]{tool_name}[/dim]")
 
                     elif event_type == "write_proposal":
                         pending_proposals = data.get("proposals", [])
