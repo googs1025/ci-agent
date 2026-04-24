@@ -6,10 +6,23 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ci-agent
 data:
-  CI_AGENT_MODEL: "claude-sonnet-4-20250514"
+  # AI provider: "anthropic" or "openai"
   CI_AGENT_PROVIDER: "anthropic"
+
+  # Model name, e.g. claude-sonnet-4-20250514, gpt-4o, gpt-5.4
+  CI_AGENT_MODEL: "claude-sonnet-4-20250514"
+
+  # Report / TUI language: "en" or "zh"
   CI_AGENT_LANGUAGE: "en"
-  CORS_ORIGINS: "https://ci-agent.example.com"    # REQUIRED: update to your domain
-  # ── Langfuse (self-hosted) ──
-  # Points to the in-cluster Langfuse service. Leave empty to disable tracing.
-  LANGFUSE_HOST: "http://langfuse:3000"
+
+  # Custom OpenAI-compatible endpoint (leave empty for official API)
+  # Only needed when CI_AGENT_PROVIDER=openai and using a proxy or self-hosted endpoint
+  CI_AGENT_BASE_URL: ""
+
+  # Allowed CORS origins for the frontend — set to your actual domain in production
+  # Use "*" only for local dev / minikube
+  CORS_ORIGINS: "https://ci-agent.example.com"
+
+  # Langfuse observability host — leave empty to disable tracing
+  # Use "http://langfuse:3000" for in-cluster self-hosted, or cloud URL for SaaS
+  LANGFUSE_HOST: ""

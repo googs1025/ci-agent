@@ -15,7 +15,7 @@ jobs:
   # ── Backend ──────────────────────────────────────────────────
   backend-lint:
     name: Backend Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,7 +28,7 @@ jobs:
 
   backend-test:
     name: Backend Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: backend-lint
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
   # ── Frontend ─────────────────────────────────────────────────
   frontend-lint:
     name: Frontend Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: web
@@ -60,7 +60,7 @@ jobs:
 
   frontend-build:
     name: Frontend Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: frontend-lint
     defaults:
       run:
@@ -78,7 +78,7 @@ jobs:
   # ── Docker ───────────────────────────────────────────────────
   docker-build:
     name: Docker Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [backend-test, frontend-build]
     steps:
       - uses: actions/checkout@v4

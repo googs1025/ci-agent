@@ -30,6 +30,9 @@ class AgentConfig:
     # Custom API base URL (for OpenAI-compatible endpoints)
     base_url: str | None = None
 
+    # Anthropic API base URL (for proxies / custom endpoints)
+    anthropic_base_url: str | None = None
+
     # Agent behavior
     max_turns: int = 20
     language: str = "en"  # "en" or "zh"
@@ -79,6 +82,8 @@ class AgentConfig:
             config.provider = env_provider
         if env_base_url := os.getenv("CI_AGENT_BASE_URL"):
             config.base_url = env_base_url
+        if env_anthropic_base := os.getenv("ANTHROPIC_BASE_URL"):
+            config.anthropic_base_url = env_anthropic_base
         if env_openai_key := os.getenv("OPENAI_API_KEY"):
             config.openai_api_key = env_openai_key
         if env_diag_default := os.getenv("DIAGNOSE_DEFAULT_MODEL"):
@@ -110,6 +115,8 @@ class AgentConfig:
         env: dict[str, str] = {}
         if self.anthropic_api_key:
             env["ANTHROPIC_API_KEY"] = self.anthropic_api_key
+        if self.anthropic_base_url:
+            env["ANTHROPIC_BASE_URL"] = self.anthropic_base_url
         return env
 
     def __post_init__(self):

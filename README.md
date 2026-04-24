@@ -8,8 +8,10 @@ AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude
 
 - **四维度分析**: 执行效率、安全最佳实践、成本优化、错误模式分析
 - **单次失败诊断 (Failure Triage)**: 针对具体失败 Run 的 AI 根因分析，9 类错误分类 + 快速修复建议，支持手动触发 + Webhook 自动诊断 + 签名聚类去重
-- **双 AI 引擎**: Anthropic (Claude Agent SDK) / OpenAI (任意兼容端点)
-- **双交互方式**: CLI 命令行 + Web UI (Next.js Dashboard)
+- **双 AI 引擎**: Anthropic (Claude) / OpenAI (任意兼容端点)
+- **三种交互方式**: TUI 对话模式 (`ci-agent chat`) + CLI 命令行 + Web UI (Next.js Dashboard)
+- **TUI 交互式对话**: 自然语言提问，AI 自动读取仓库文件，支持写入确认流程（diff 预览 + 用户确认）
+- **写入操作确认**: AI 提出的文件修改先展示 diff，等用户确认后再执行，安全可控
 - **多语言报告**: 中文 / 英文
 - **CI 使用率统计**: Job 耗时、排队时间、Runner 分布、计费估算、最慢 Step 排名
 - **智能输入**: 支持 GitHub URL / `owner/repo` 简写 / 本地路径
@@ -19,33 +21,36 @@ AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude
 ## Architecture
 
 ```
-                    ┌─────────────────────┐
-                    │   CLI / Web UI      │
-                    └─────────┬───────────┘
-                              │
-                    ┌─────────▼───────────┐
-                    │   FastAPI Backend    │
-                    └─────────┬───────────┘
-                              │
-              ┌───────────────▼───────────────┐
-              │       Agent Orchestrator       │
-              │   config.provider =            │
-              │   ┌─────────┬───────────┐     │
-              │   │anthropic│  openai   │     │
-              │   │(Claude  │ (GPT/任意 │     │
-              │   │ Agent   │  兼容端点) │     │
-              │   │ SDK)    │ streaming │     │
-              │   └─────────┴───────────┘     │
-              │           │                    │
-              │  ┌────────┼────────┬────────┐  │
-              │  ▼        ▼       ▼        ▼  │
-              │ 效率    安全     成本     错误  │
-              │ 专家    专家     专家     专家  │
-              └───────────────────────────────┘
-                              │
-                    ┌─────────▼───────────┐
-                    │  SQLite + GitHub API │
-                    └─────────────────────┘
+  ┌─────────────────────────────────────────────────┐
+  │                    Clients                       │
+  │                                                  │
+  │  ┌────────────┐  ┌──────────────┐  ┌─────────┐  │
+  │  │  TUI Chat  │  │  Next.js     │  │   CLI   │  │
+  │  │ (ci-agent  │  │  Web UI      │  │ analyze │  │
+  │  │   chat)    │  │  (:3000)     │  │ command │  │
+  │  └─────┬──────┘  └──────┬───────┘  └────┬────┘  │
+  └────────┼────────────────┼───────────────┼────────┘
+           │  SSE stream    │  REST         │ direct
+           ▼                ▼               ▼
+  ┌─────────────────────────────────────────────────┐
+  │              FastAPI Backend (:8000)             │
+  │                                                  │
+  │  /api/chat (SSE)    /api/analyze   /api/reports  │
+  │  /api/chat/apply    /api/config    /api/skills   │
+  │       │                  │                       │
+  │  ┌────▼───────┐   ┌──────▼──────────────────┐   │
+  │  │ Chat Agent │   │   Analysis Orchestrator  │   │
+  │  │  + Tools   │   │  anthropic / openai      │   │
+  │  │ (tool_use  │   │  engine                  │   │
+  │  │  + write   │   │  (4 specialist agents)   │   │
+  │  │  proposal) │   └──────────────────────────┘   │
+  │  └────────────┘                                  │
+  └─────────────────────────────────────────────────┘
+                          │
+              ┌───────────┼───────────┐
+              ▼           ▼           ▼
+         SQLite DB    GitHub API   Anthropic /
+                     (Run History) OpenAI API
 ```
 
 ## Quick Start
@@ -53,7 +58,7 @@ AI 驱动的 GitHub CI 流水线分析和优化系统。支持 Anthropic (Claude
 ### Prerequisites
 
 - Python 3.10+
-- Node.js 18+ (for Web UI)
+- Node.js 18+ (仅 Web UI 需要)
 - AI API Key (Anthropic 或 OpenAI 二选一)
 - `GITHUB_TOKEN` (可选，用于获取 CI 运行历史)
 
@@ -127,7 +132,32 @@ curl -X POST http://localhost:8000/api/analyze \
   -d '{"repo": "owner/repo", "agent_config": {"provider": "openai", "model": "gpt-4o", "language": "zh"}}'
 ```
 
-### CLI Usage
+### TUI 对话模式（推荐）
+
+```bash
+# 方式一：自动启动 Server + TUI（一键）
+ci-agent chat
+
+# 方式二：手动分别启动
+ci-agent serve          # 终端 1：启动后端 Server
+ci-agent chat           # 终端 2：启动 TUI
+
+# 指定仓库路径
+ci-agent chat --repo /path/to/repo
+```
+
+TUI 支持自然语言提问，AI 会自动读取仓库 workflow 文件并回答，也可以提出修改建议（先展示 diff 供你确认再写入）。
+
+TUI 内置斜杠命令：
+```
+/help           查看帮助
+/clear          清空对话历史
+/model <name>   切换模型
+/repo <path>    切换仓库
+/quit           退出
+```
+
+### CLI 一次性分析
 
 ```bash
 # 三种输入方式
@@ -174,7 +204,9 @@ docker compose up -d
 
 | 层 | 技术 |
 |---|------|
-| AI (Anthropic) | Claude Agent SDK, 编排器 + 子 Agent 模式 |
+| TUI | prompt_toolkit (REPL + 历史补全), Rich (渲染 + diff 展示) |
+| Chat API | FastAPI SSE streaming, multi-turn agentic loop, write proposal 确认流 |
+| AI (Anthropic) | Anthropic SDK, multi-turn tool use (read/write/git/CI tools) |
 | AI (OpenAI) | OpenAI Python SDK, streaming, 并行 specialist |
 | Backend | Python 3.10+, FastAPI, SQLAlchemy, SQLite |
 | Frontend | Next.js 14, Tailwind CSS, TypeScript |
