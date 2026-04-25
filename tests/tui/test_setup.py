@@ -1,7 +1,6 @@
 """Tests for TUI setup wizard logic."""
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -37,8 +36,9 @@ def test_mask_key_empty():
     assert mask_key("") == "(未设置)"
 
 
-import httpx
 from unittest.mock import AsyncMock, MagicMock
+
+import httpx
 
 from ci_optimizer.tui.setup import verify_api
 
@@ -132,7 +132,9 @@ async def test_verify_api_network_error():
 
 
 from io import StringIO
+
 from rich.console import Console
+
 from ci_optimizer.config import AgentConfig
 
 
@@ -151,7 +153,6 @@ async def test_run_setup_wizard_anthropic(tmp_path):
 
     with (
         patch("ci_optimizer.tui.setup.CONFIG_FILE", config_file),
-        patch("ci_optimizer.tui.setup.CONFIG_DIR", config_dir),
         patch("ci_optimizer.config.CONFIG_FILE", config_file),
         patch("ci_optimizer.config.CONFIG_DIR", config_dir),
         patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
@@ -182,7 +183,6 @@ async def test_run_setup_wizard_openai(tmp_path):
 
     with (
         patch("ci_optimizer.tui.setup.CONFIG_FILE", config_file),
-        patch("ci_optimizer.tui.setup.CONFIG_DIR", config_dir),
         patch("ci_optimizer.config.CONFIG_FILE", config_file),
         patch("ci_optimizer.config.CONFIG_DIR", config_dir),
         patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
@@ -218,7 +218,6 @@ async def test_config_review_no_changes(tmp_path):
 
     with (
         patch("ci_optimizer.tui.setup.CONFIG_FILE", tmp_path / "config.json"),
-        patch("ci_optimizer.tui.setup.CONFIG_DIR", tmp_path),
         patch("ci_optimizer.config.CONFIG_FILE", tmp_path / "config.json"),
         patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
         patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
@@ -251,7 +250,6 @@ async def test_config_review_change_model(tmp_path):
 
     with (
         patch("ci_optimizer.tui.setup.CONFIG_FILE", tmp_path / "config.json"),
-        patch("ci_optimizer.tui.setup.CONFIG_DIR", tmp_path),
         patch("ci_optimizer.config.CONFIG_FILE", tmp_path / "config.json"),
         patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
         patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),

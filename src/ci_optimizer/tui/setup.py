@@ -9,7 +9,7 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 from rich.panel import Panel
 
-from ci_optimizer.config import CONFIG_DIR, CONFIG_FILE, DEFAULT_MODEL, AgentConfig
+from ci_optimizer.config import CONFIG_FILE, DEFAULT_MODEL, AgentConfig
 
 
 def needs_setup() -> bool:
@@ -245,7 +245,7 @@ async def run_config_review(console: Console, config: AgentConfig) -> AgentConfi
     # Save if changed
     if changed:
         config.save()
-        console.print(f"\n[green]✓ 配置已更新[/green]")
+        console.print("\n[green]✓ 配置已更新[/green]")
     console.print()
 
     # Always verify API
