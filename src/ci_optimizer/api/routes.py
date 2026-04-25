@@ -317,14 +317,29 @@ async def get_config():
     return config.to_display_dict()
 
 
+# Mapping: config field → env var name (so PUT /api/config can override env vars in-process)
+_FIELD_TO_ENV = {
+    "provider": "CI_AGENT_PROVIDER",
+    "model": "CI_AGENT_MODEL",
+    "anthropic_api_key": "ANTHROPIC_API_KEY",
+    "openai_api_key": "OPENAI_API_KEY",
+    "github_token": "GITHUB_TOKEN",
+    "base_url": "CI_AGENT_BASE_URL",
+    "language": "CI_AGENT_LANGUAGE",
+}
+
+
 @router.put("/config")
 async def update_config(updates: AgentConfigSchema):
-    """Update agent configuration."""
+    """Update agent configuration. Writes to config.json AND sets env vars in-process."""
     config = AgentConfig.load()
     for field in ("provider", "model", "fallback_model", "anthropic_api_key", "openai_api_key", "github_token", "base_url", "language"):
         val = getattr(updates, field, None)
         if val is not None:
             setattr(config, field, val)
+            # Also set env var so load() won't revert the change
+            if env_key := _FIELD_TO_ENV.get(field):
+                os.environ[env_key] = val
     if updates.max_turns is not None:
         config.max_turns = updates.max_turns
     config.save()
