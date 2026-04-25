@@ -5,6 +5,7 @@
 | 文档 | 中文 | English |
 |------|------|---------|
 | 使用指南 | [zh](guides/zh/usage-guide.md) | [en](guides/en/usage-guide.md) |
+| TUI 交互模式 | [zh](guides/zh/tui-guide.md) | — |
 | 部署指南 (Docker / K8s) | [zh](guides/zh/deployment.md) | [en](guides/en/deployment.md) |
 | Langfuse 可观测性 | [zh](guides/zh/langfuse-setup.md) | [en](guides/en/langfuse-setup.md) |
 
