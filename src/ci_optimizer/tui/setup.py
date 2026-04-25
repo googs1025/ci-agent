@@ -5,8 +5,11 @@ from __future__ import annotations
 import time
 
 import httpx
+from prompt_toolkit import PromptSession
+from rich.console import Console
+from rich.panel import Panel
 
-from ci_optimizer.config import CONFIG_FILE, AgentConfig
+from ci_optimizer.config import CONFIG_DIR, CONFIG_FILE, DEFAULT_MODEL, AgentConfig
 
 
 def needs_setup() -> bool:
@@ -95,3 +98,96 @@ async def _verify_openai(api_key: str, model: str, base_url: str | None) -> tupl
         data = resp.json()
         model_used = data.get("model", model)
         return True, f"{model_used}, 响应 {elapsed:.1f}s"
+
+
+async def run_setup_wizard(console: Console) -> AgentConfig:
+    """Run the full first-time setup wizard. Returns configured AgentConfig."""
+    console.print(
+        Panel(
+            "[bold]首次使用，需要进行初始配置[/bold]",
+            title="ci-agent Setup",
+            border_style="cyan",
+        )
+    )
+    console.print()
+
+    session = PromptSession()
+    config = AgentConfig()
+
+    # 1. Provider
+    console.print("[bold]1. AI 引擎[/bold]")
+    console.print("   [1] Anthropic (Claude)")
+    console.print("   [2] OpenAI (兼容)")
+    choice = (await session.prompt_async("   请选择 [1]: ")).strip() or "1"
+    config.provider = "openai" if choice == "2" else "anthropic"
+    console.print()
+
+    # 2. API Key
+    console.print("[bold]2. API Key[/bold]")
+    if config.provider == "anthropic":
+        key = (await session.prompt_async("   请输入 Anthropic API Key: ", is_password=True)).strip()
+        if key:
+            config.anthropic_api_key = key
+    else:
+        key = (await session.prompt_async("   请输入 OpenAI API Key: ", is_password=True)).strip()
+        if key:
+            config.openai_api_key = key
+        console.print("   [dim]如需自定义 Base URL，请稍后通过 ci-agent config set base_url <url> 设置[/dim]")
+    console.print()
+
+    # 3. GitHub Token
+    console.print("[bold]3. GitHub Token[/bold] [dim](用于拉取 CI 数据，回车跳过)[/dim]")
+    token = (await session.prompt_async("   请输入 GitHub Token: ", is_password=True)).strip()
+    if token:
+        config.github_token = token
+    else:
+        config.github_token = None
+    console.print()
+
+    # 4. Model
+    default_model = DEFAULT_MODEL if config.provider == "anthropic" else "gpt-4o"
+    console.print(f"[bold]4. 模型[/bold] [dim](默认: {default_model})[/dim]")
+    model = (await session.prompt_async("   请输入模型名称 (回车使用默认): ")).strip()
+    config.model = model if model else default_model
+    console.print()
+
+    # 5. Language
+    console.print("[bold]5. 输出语言[/bold]")
+    console.print("   [1] English")
+    console.print("   [2] 中文")
+    lang_choice = (await session.prompt_async("   请选择 [1]: ")).strip() or "1"
+    config.language = "zh" if lang_choice == "2" else "en"
+    console.print()
+
+    # Save
+    config.save()
+    console.print(f"[green]✓ 配置已保存到 {CONFIG_FILE}[/green]")
+    console.print()
+
+    # Verify
+    await _run_verify(console, config)
+
+    return config
+
+
+async def _run_verify(console: Console, config: AgentConfig) -> None:
+    """Run API verification and print result."""
+    api_key = config.get_api_key()
+    if not api_key:
+        console.print("[yellow]⚠ 未设置 API Key，跳过连通性验证[/yellow]")
+        return
+
+    console.print("[dim]⠸ 正在验证 API 连通性...[/dim]")
+    ok, msg = await verify_api(
+        provider=config.provider,
+        api_key=api_key,
+        model=config.model,
+        base_url=config.base_url,
+        anthropic_base_url=config.anthropic_base_url,
+    )
+    if ok:
+        console.print(f"[green]✓ API 连通正常 ({msg})[/green]")
+    else:
+        console.print(f"[red]✗ API 验证失败: {msg}[/red]")
+        console.print("[dim]  可稍后通过 /model 或 ci-agent config set 修改配置[/dim]")
+    console.print()

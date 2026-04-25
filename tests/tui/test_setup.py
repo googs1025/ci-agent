@@ -129,3 +129,70 @@ async def test_verify_api_network_error():
         )
     assert ok is False
     assert "网络" in msg or "connect" in msg.lower()
+
+
+from io import StringIO
+from rich.console import Console
+from ci_optimizer.config import AgentConfig
+
+
+@pytest.mark.asyncio
+async def test_run_setup_wizard_anthropic(tmp_path):
+    """Full wizard flow: anthropic provider, all fields filled."""
+    from ci_optimizer.tui.setup import run_setup_wizard
+
+    config_file = tmp_path / "config.json"
+    config_dir = tmp_path
+
+    # 1 = anthropic, sk-ant-key, ghp-token, (enter for default model), 2 = zh
+    inputs = iter(["1", "sk-ant-test-key-123456", "ghp-token-abc", "", "2"])
+    mock_session = AsyncMock()
+    mock_session.prompt_async = AsyncMock(side_effect=lambda *a, **kw: next(inputs))
+
+    with (
+        patch("ci_optimizer.tui.setup.CONFIG_FILE", config_file),
+        patch("ci_optimizer.tui.setup.CONFIG_DIR", config_dir),
+        patch("ci_optimizer.config.CONFIG_FILE", config_file),
+        patch("ci_optimizer.config.CONFIG_DIR", config_dir),
+        patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
+        patch("ci_optimizer.tui.setup.verify_api", new=AsyncMock(return_value=(True, "claude-sonnet-4-20250514, 响应 1.0s"))),
+    ):
+        console = Console(file=StringIO())
+        config = await run_setup_wizard(console)
+
+    assert config.provider == "anthropic"
+    assert config.anthropic_api_key == "sk-ant-test-key-123456"
+    assert config.github_token == "ghp-token-abc"
+    assert config.language == "zh"
+    assert config_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_setup_wizard_openai(tmp_path):
+    """Wizard flow: openai provider."""
+    from ci_optimizer.tui.setup import run_setup_wizard
+
+    config_file = tmp_path / "config.json"
+    config_dir = tmp_path
+
+    # 2 = openai, sk-key, (enter skip github), model-name, 1 = en
+    inputs = iter(["2", "sk-openai-key-123456", "", "gpt-4o", "1"])
+    mock_session = AsyncMock()
+    mock_session.prompt_async = AsyncMock(side_effect=lambda *a, **kw: next(inputs))
+
+    with (
+        patch("ci_optimizer.tui.setup.CONFIG_FILE", config_file),
+        patch("ci_optimizer.tui.setup.CONFIG_DIR", config_dir),
+        patch("ci_optimizer.config.CONFIG_FILE", config_file),
+        patch("ci_optimizer.config.CONFIG_DIR", config_dir),
+        patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
+        patch("ci_optimizer.tui.setup.verify_api", new=AsyncMock(return_value=(True, "gpt-4o, 响应 0.8s"))),
+    ):
+        console = Console(file=StringIO())
+        config = await run_setup_wizard(console)
+
+    assert config.provider == "openai"
+    assert config.openai_api_key == "sk-openai-key-123456"
+    assert config.github_token is None
+    assert config.model == "gpt-4o"
+    assert config.language == "en"
