@@ -196,3 +196,69 @@ async def test_run_setup_wizard_openai(tmp_path):
     assert config.github_token is None
     assert config.model == "gpt-4o"
     assert config.language == "en"
+
+
+@pytest.mark.asyncio
+async def test_config_review_no_changes(tmp_path):
+    """User declines all modifications."""
+    from ci_optimizer.tui.setup import run_config_review
+
+    config = AgentConfig(
+        provider="anthropic",
+        anthropic_api_key="sk-ant-test-key-123456",
+        github_token="ghp-token-abc",
+        model="claude-sonnet-4-20250514",
+        language="zh",
+    )
+
+    # All empty = default N
+    inputs = iter(["", "", "", "", ""])
+    mock_session = AsyncMock()
+    mock_session.prompt_async = AsyncMock(side_effect=lambda *a, **kw: next(inputs))
+
+    with (
+        patch("ci_optimizer.tui.setup.CONFIG_FILE", tmp_path / "config.json"),
+        patch("ci_optimizer.tui.setup.CONFIG_DIR", tmp_path),
+        patch("ci_optimizer.config.CONFIG_FILE", tmp_path / "config.json"),
+        patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
+        patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
+        patch("ci_optimizer.tui.setup.verify_api", new=AsyncMock(return_value=(True, "ok, 1.0s"))),
+    ):
+        console = Console(file=StringIO())
+        result = await run_config_review(console, config)
+
+    assert result.provider == "anthropic"
+    assert result.anthropic_api_key == "sk-ant-test-key-123456"
+    assert result.language == "zh"
+
+
+@pytest.mark.asyncio
+async def test_config_review_change_model(tmp_path):
+    """User changes only the model."""
+    from ci_optimizer.tui.setup import run_config_review
+
+    config = AgentConfig(
+        provider="anthropic",
+        anthropic_api_key="sk-ant-test-key-123456",
+        model="claude-sonnet-4-20250514",
+        language="en",
+    )
+
+    # n, n, n, y + new model, n
+    inputs = iter(["", "", "", "y", "claude-opus-4-20250514", ""])
+    mock_session = AsyncMock()
+    mock_session.prompt_async = AsyncMock(side_effect=lambda *a, **kw: next(inputs))
+
+    with (
+        patch("ci_optimizer.tui.setup.CONFIG_FILE", tmp_path / "config.json"),
+        patch("ci_optimizer.tui.setup.CONFIG_DIR", tmp_path),
+        patch("ci_optimizer.config.CONFIG_FILE", tmp_path / "config.json"),
+        patch("ci_optimizer.config.CONFIG_DIR", tmp_path),
+        patch("ci_optimizer.tui.setup.PromptSession", return_value=mock_session),
+        patch("ci_optimizer.tui.setup.verify_api", new=AsyncMock(return_value=(True, "ok, 1.0s"))),
+    ):
+        console = Console(file=StringIO())
+        result = await run_config_review(console, config)
+
+    assert result.model == "claude-opus-4-20250514"
+    assert result.provider == "anthropic"  # unchanged

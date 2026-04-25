@@ -170,6 +170,90 @@ async def run_setup_wizard(console: Console) -> AgentConfig:
     return config
 
 
+async def run_config_review(console: Console, config: AgentConfig) -> AgentConfig:
+    """Show current config and let user modify each item. Returns updated config."""
+    session = PromptSession()
+    changed = False
+
+    # Display current config
+    console.print(
+        Panel(
+            f"  Provider:  [bold]{config.provider}[/bold]\n"
+            f"  API Key:   [bold]{mask_key(config.get_api_key())}[/bold]\n"
+            f"  GitHub:    [bold]{mask_key(config.github_token)}[/bold]\n"
+            f"  Model:     [bold]{config.model}[/bold]\n"
+            f"  Language:  [bold]{'中文' if config.language == 'zh' else 'English'}[/bold]",
+            title="当前配置",
+            border_style="cyan",
+        )
+    )
+    console.print()
+
+    # 1. Provider
+    ans = (await session.prompt_async(f"Provider [{config.provider}] — 修改？(y/N): ")).strip().lower()
+    if ans in ("y", "yes"):
+        console.print("   [1] Anthropic (Claude)")
+        console.print("   [2] OpenAI (兼容)")
+        choice = (await session.prompt_async("   请选择: ")).strip()
+        new_provider = "openai" if choice == "2" else "anthropic"
+        if new_provider != config.provider:
+            config.provider = new_provider
+            changed = True
+            console.print(f"   [dim]已切换到 {config.provider}，请重新设置 API Key[/dim]")
+
+    # 2. API Key
+    key_display = mask_key(config.get_api_key())
+    ans = (await session.prompt_async(f"API Key [{key_display}] — 修改？(y/N): ")).strip().lower()
+    if ans in ("y", "yes"):
+        key_label = "Anthropic" if config.provider == "anthropic" else "OpenAI"
+        new_key = (await session.prompt_async(f"   请输入 {key_label} API Key: ", is_password=True)).strip()
+        if new_key:
+            if config.provider == "anthropic":
+                config.anthropic_api_key = new_key
+            else:
+                config.openai_api_key = new_key
+            changed = True
+
+    # 3. GitHub Token
+    gh_display = mask_key(config.github_token)
+    ans = (await session.prompt_async(f"GitHub Token [{gh_display}] — 修改？(y/N): ")).strip().lower()
+    if ans in ("y", "yes"):
+        new_token = (await session.prompt_async("   请输入 GitHub Token (留空清除): ", is_password=True)).strip()
+        config.github_token = new_token if new_token else None
+        changed = True
+
+    # 4. Model
+    ans = (await session.prompt_async(f"Model [{config.model}] — 修改？(y/N): ")).strip().lower()
+    if ans in ("y", "yes"):
+        new_model = (await session.prompt_async("   请输入模型名称: ")).strip()
+        if new_model:
+            config.model = new_model
+            changed = True
+
+    # 5. Language
+    lang_display = "中文" if config.language == "zh" else "English"
+    ans = (await session.prompt_async(f"Language [{lang_display}] — 修改？(y/N): ")).strip().lower()
+    if ans in ("y", "yes"):
+        console.print("   [1] English")
+        console.print("   [2] 中文")
+        choice = (await session.prompt_async("   请选择: ")).strip()
+        new_lang = "zh" if choice == "2" else "en"
+        if new_lang != config.language:
+            config.language = new_lang
+            changed = True
+
+    # Save if changed
+    if changed:
+        config.save()
+        console.print(f"\n[green]✓ 配置已更新[/green]")
+    console.print()
+
+    # Always verify API
+    await _run_verify(console, config)
+
+    return config
+
+
 async def _run_verify(console: Console, config: AgentConfig) -> None:
     """Run API verification and print result."""
     api_key = config.get_api_key()
