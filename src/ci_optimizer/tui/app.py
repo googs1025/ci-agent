@@ -302,6 +302,19 @@ async def run_tui(repo_path: Path | None = None) -> None:
 
     _print_banner(console)
 
+    # Setup / config review
+    from ci_optimizer.tui.setup import needs_setup, run_config_review, run_setup_wizard
+
+    try:
+        if needs_setup():
+            config = await run_setup_wizard(console)
+        else:
+            config = AgentConfig.load()
+            config = await run_config_review(console, config)
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[dim]已退出[/dim]")
+        return
+
     # Detect and confirm repo
     ctx = detect_repo(repo_path)
     try:
@@ -310,7 +323,6 @@ async def run_tui(repo_path: Path | None = None) -> None:
         console.print("\n[dim]已退出[/dim]")
         return
 
-    config = AgentConfig.load()
     server_url = _get_server_url()
 
     # Auto-start server if not running
