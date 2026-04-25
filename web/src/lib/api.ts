@@ -161,6 +161,25 @@ export async function deleteSkill(name: string): Promise<{ removed: string }> {
 }
 
 /**
+ * Fetch agent configuration (sensitive values masked).
+ */
+export async function getAgentConfig(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/api/config');
+}
+
+/**
+ * Update agent configuration.
+ */
+export async function updateAgentConfig(
+  updates: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+/**
  * Fetch webhook configuration status.
  */
 export async function getWebhookStatus(): Promise<WebhookStatus> {
