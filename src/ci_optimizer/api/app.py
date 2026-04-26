@@ -22,10 +22,7 @@ from ci_optimizer.db.database import init_db
 
 load_dotenv()
 
-# Configure logging so background task output (from logger.info in
-# _run_analysis_task, engines, prefetch, etc.) is visible in the uvicorn
-# console. Uvicorn does not touch non-uvicorn loggers by default, so we
-# attach a stream handler to the ci_optimizer namespace.
+# ── ci_optimizer 业务日志 ─────────────────────────────────────────────────────
 _LOG_LEVEL = os.getenv("CI_AGENT_LOG_LEVEL", "INFO").upper()
 _log_formatter = logging.Formatter(
     "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
@@ -38,6 +35,29 @@ if not any(isinstance(h, logging.StreamHandler) for h in _ci_logger.handlers):
     _ci_logger.addHandler(_stream_handler)
 _ci_logger.setLevel(_LOG_LEVEL)
 _ci_logger.propagate = False
+
+# ── uvicorn access log 降噪 ───────────────────────────────────────────────────
+# GET 200/204 的轮询端点（dashboard、reports 列表、health）降为 DEBUG，
+# 避免每次前端轮询都刷屏；POST / 4xx / 5xx 保持 INFO/WARNING/ERROR。
+_NOISY_PREFIXES = ("/api/dashboard", "/api/reports", "/health", "/api/repositories")
+
+
+class _AccessLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        # uvicorn access log 格式: '10.x.x.x:port - "GET /path HTTP/1.1" 200 OK'
+        if record.levelno == logging.INFO and '"GET ' in msg:
+            status = msg.rsplit(" ", 2)[-2] if msg.count(" ") >= 2 else ""
+            if status.startswith("2"):  # 2xx
+                path = msg.split('"GET ', 1)[-1].split(" HTTP")[0] if '"GET ' in msg else ""
+                if any(path.startswith(p) for p in _NOISY_PREFIXES):
+                    record.levelno = logging.DEBUG
+                    record.levelname = "DEBUG"
+        return True
+
+
+_access_logger = logging.getLogger("uvicorn.access")
+_access_logger.addFilter(_AccessLogFilter())
 
 
 @asynccontextmanager
