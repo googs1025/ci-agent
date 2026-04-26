@@ -115,7 +115,7 @@ def _parse_result(
     return raw_text, [], {"total_findings": 0}
 
 
-@langfuse_observe(name="ci-analysis")
+@langfuse_observe(name="ci-agent-analyze")
 async def run_analysis(
     ctx: AnalysisContext,
     config: AgentConfig | None = None,

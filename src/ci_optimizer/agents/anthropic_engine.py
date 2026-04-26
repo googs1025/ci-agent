@@ -24,9 +24,6 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
-    ToolResultBlock,
-    ToolUseBlock,
-    UserMessage,
     query,
 )
 
@@ -79,7 +76,7 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
     return "\n".join(parts)
 
 
-@langfuse_observe(name="anthropic-analysis")
+@langfuse_observe(name="ci-agent-analyze-anthropic")
 async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":
     """使用 Claude Agent SDK 执行并行多专家分析，由 orchestrator subagent 统一调度。
 
@@ -129,13 +126,10 @@ async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skil
         f"Starting Anthropic analysis: model={config.model}, lang={config.language}, "
         f"max_turns={config.max_turns}, skills={[s.name for s in skills]}"
     )
-    lf = None
-    lf_trace = None
+    # 用 langfuse_context 把 tool/generation span 挂在父 @langfuse_observe trace 下
     try:
-        from ci_optimizer.agents.tracing import get_langfuse
-        lf = get_langfuse()
-        if lf:
-            lf_trace = lf.trace(name="ci-agent-analyze", input=prompt[:500])
+        from langfuse.decorators import langfuse_context as _lf_ctx
+        _lf_ctx.update_current_observation(input=prompt[:500])
     except Exception:
         pass
 
@@ -147,52 +141,22 @@ async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skil
         ):
             message_count += 1
             if isinstance(message, AssistantMessage):
-                # 更新 generation span（含 token 用量）
-                if lf_trace and message.usage:
+                if message.usage:
                     try:
+                        from langfuse.decorators import langfuse_context as _lf_ctx
                         inp = message.usage.get("input_tokens", 0)
                         out = message.usage.get("output_tokens", 0)
-                        lf_trace.generation(
-                            name=f"llm-{message_count}",
-                            model=message.model,
+                        _lf_ctx.update_current_observation(
                             usage={"input": inp, "output": out, "total": inp + out, "unit": "TOKENS"},
+                            model=message.model,
                         )
                     except Exception:
                         pass
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         collected_text.append(block.text)
-                    elif isinstance(block, ToolUseBlock) and lf_trace:
-                        try:
-                            lf_trace.span(
-                                name=block.name,
-                                input=block.input,
-                                metadata={"tool_id": block.id, "type": "tool_use"},
-                            )
-                        except Exception:
-                            pass
-            elif isinstance(message, UserMessage):
-                # UserMessage 里的 ToolResultBlock 是工具执行结果
-                if lf_trace and isinstance(message.content, list):
-                    for block in message.content:
-                        if isinstance(block, ToolResultBlock):
-                            try:
-                                content = block.content
-                                output = content[:500] if isinstance(content, str) and len(content) > 500 else content
-                                lf_trace.span(
-                                    name=f"tool-result:{block.tool_use_id[:8]}",
-                                    output=output,
-                                    metadata={"tool_use_id": block.tool_use_id, "type": "tool_result", "is_error": block.is_error},
-                                )
-                            except Exception:
-                                pass
             elif isinstance(message, ResultMessage):
                 result.cost_usd = message.total_cost_usd or 0.0
-                if lf_trace:
-                    try:
-                        lf_trace.update(output=f"cost=${result.cost_usd:.4f}")
-                    except Exception:
-                        pass
                 logger.info(f"Analysis complete: cost=${result.cost_usd}, session={message.session_id}")
     except Exception as e:
         logger.error(f"Agent SDK query failed: {e}", exc_info=True)

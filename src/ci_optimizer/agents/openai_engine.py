@@ -121,7 +121,7 @@ async def _call_specialist(
     return "".join(collected)
 
 
-@langfuse_observe(name="ci-agent-analyze")
+@langfuse_observe(name="ci-agent-analyze-openai")
 async def run_analysis_openai(
     ctx: AnalysisContext,
     config: AgentConfig,
