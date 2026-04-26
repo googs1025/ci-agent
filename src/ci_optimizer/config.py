@@ -68,24 +68,19 @@ class AgentConfig:
 
     @classmethod
     def load(cls) -> "AgentConfig":
-        """Load config from file, env vars, with env vars taking priority.
+        """Load config with explicit priority order (low → high):
 
-        加载优先级：默认值 < JSON 文件 < 环境变量。
-        环境变量始终覆盖文件配置，方便 CI 场景下无感注入密钥。
+          1. 代码默认值
+          2. .env 文件（由 cli.py load_dotenv(override=False) 加载，只填充未设置的变量）
+          3. 真实环境变量（shell / k8s ConfigMap & Secret）
+          4. ~/.ci-agent/config.json（最高优先级，用户显式配置）
+
+        .env 仅作开发时兜底，生产环境（k8s）通常不存在该文件，故为 no-op。
+        JSON 文件优先于环境变量，确保用户显式保存的设置不被外部环境覆盖。
         """
         config = cls()
 
-        # Load from config file
-        if CONFIG_FILE.exists():
-            try:
-                data = json.loads(CONFIG_FILE.read_text())
-                for key, value in data.items():
-                    if hasattr(config, key):
-                        setattr(config, key, value)
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        # Env vars override file config
+        # Step 1+2: 环境变量（含 .env 已注入的值）作为中间层
         if env_key := os.getenv("ANTHROPIC_API_KEY"):
             config.anthropic_api_key = env_key
         if env_token := os.getenv("GITHUB_TOKEN"):
@@ -110,7 +105,6 @@ class AgentConfig:
             config.diagnose_auto_on_webhook = env_auto.lower() in ("1", "true", "yes")
         if env_sample := os.getenv("DIAGNOSE_SAMPLE_RATE"):
             try:
-                # 强制钳位到 [0.0, 1.0]，防止调用方传入非法比率导致全量诊断失控
                 config.diagnose_sample_rate = max(0.0, min(1.0, float(env_sample)))
             except ValueError:
                 pass
@@ -123,6 +117,17 @@ class AgentConfig:
             try:
                 config.diagnose_signature_ttl_hours = max(1, int(env_sig_ttl))
             except ValueError:
+                pass
+
+        # Step 3: ~/.ci-agent/config.json 最后覆盖，优先级最高
+        # 只覆盖 JSON 中非 None 的字段，未设置的字段保留环境变量值
+        if CONFIG_FILE.exists():
+            try:
+                data = json.loads(CONFIG_FILE.read_text())
+                for key, value in data.items():
+                    if hasattr(config, key) and value is not None:
+                        setattr(config, key, value)
+            except (json.JSONDecodeError, OSError):
                 pass
 
         return config

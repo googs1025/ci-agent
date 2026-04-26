@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ci_optimizer.agents.tracing import flush as _lf_flush
+from ci_optimizer.agents.tracing import get_langfuse
 from ci_optimizer.api.auth import verify_api_key
 from ci_optimizer.api.tools import ANTHROPIC_TOOLS, TOOL_DEFINITIONS, WRITE_TOOL_NAMES, execute_tool, preview_write
 from ci_optimizer.config import AgentConfig
@@ -112,6 +114,7 @@ async def _run_agentic_loop(
     messages: list[dict],
     repo_root: Path | None,
     max_turns: int = 10,
+    trace=None,
 ):
     """多轮 tool-use 循环。Yield SSE 事件字符串。
 
@@ -136,6 +139,17 @@ async def _run_agentic_loop(
 
         total_input += response.usage.input_tokens
         total_output += response.usage.output_tokens
+
+        # 记录本轮 LLM 调用到 Langfuse
+        if trace:
+            try:
+                trace.generation(
+                    name=f"turn-{turn}",
+                    model=model,
+                    usage={"input": response.usage.input_tokens, "output": response.usage.output_tokens},
+                )
+            except Exception:
+                pass
 
         # 处理 content blocks
         tool_use_blocks = []
@@ -290,16 +304,38 @@ async def chat(request: ChatRequest):
         # 构建 messages
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
+        # 创建 Langfuse trace（未配置时 get_langfuse() 返回 None，静默跳过）
+        lf = get_langfuse()
+        trace = None
+        if lf:
+            try:
+                user_input = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+                trace = lf.trace(
+                    name="chat",
+                    input=user_input,
+                    metadata={"repo": request.repo, "branch": request.branch, "model": model},
+                )
+            except Exception:
+                pass
+
         try:
             if config.provider == "openai":
-                async for chunk in _query_openai(messages, system, model, config, repo_root):
+                async for chunk in _query_openai(messages, system, model, config, repo_root, trace=trace):
                     yield chunk
             else:
-                async for chunk in _query_anthropic(messages, system, model, api_key, base_url, repo_root):
+                async for chunk in _query_anthropic(messages, system, model, api_key, base_url, repo_root, trace=trace):
                     yield chunk
         except Exception as e:
             logger.error(f"Chat error: {e}", exc_info=True)
             yield _sse_event("error", {"message": str(e)})
+        finally:
+            # 确保 trace 数据在响应结束前推送到 Langfuse
+            if trace:
+                try:
+                    trace.update(output=None)
+                except Exception:
+                    pass
+            _lf_flush()
 
     return StreamingResponse(
         _generate(),
@@ -352,6 +388,7 @@ async def _query_anthropic(
     api_key: str | None,
     base_url: str | None,
     repo_root: Path | None = None,
+    trace=None,
 ):
     """通过 Anthropic SDK 查询，支持 tool use 和代理。
     base_url 会做后缀清理（去掉 /v1/messages 或 /v1），因为 SDK 自动拼接路径。
@@ -376,6 +413,7 @@ async def _query_anthropic(
         messages=messages,
         repo_root=repo_root,
         max_turns=config.max_turns,
+        trace=trace,
     ):
         yield event
 
@@ -386,6 +424,7 @@ async def _query_openai(
     model: str,
     config: AgentConfig,
     repo_root: "Path | None" = None,
+    trace=None,
 ):
     """通过 OpenAI SDK 查询，支持多轮 tool use（OpenAI function calling 格式）。
     注意：OpenAI 路径目前不实现 write_proposal 拦截，写操作会直接执行。
@@ -411,6 +450,15 @@ async def _query_openai(
         msg = choice.message
         if response.usage:
             total_tokens += response.usage.total_tokens
+            if trace:
+                try:
+                    trace.generation(
+                        name=f"turn-{turn}",
+                        model=model,
+                        usage={"input": response.usage.prompt_tokens, "output": response.usage.completion_tokens},
+                    )
+                except Exception:
+                    pass
 
         # Text response
         if msg.content:
