@@ -127,6 +127,7 @@ async def _run_agentic_loop(
     total_input = 0
     total_output = 0
     turn = 0
+    last_assistant_text = ""
 
     for turn in range(max_turns):
         response = await client.messages.create(
@@ -140,21 +141,12 @@ async def _run_agentic_loop(
         total_input += response.usage.input_tokens
         total_output += response.usage.output_tokens
 
-        # 记录本轮 LLM 调用到 Langfuse
-        if trace:
-            try:
-                trace.generation(
-                    name=f"turn-{turn}",
-                    model=model,
-                    usage={"input": response.usage.input_tokens, "output": response.usage.output_tokens},
-                )
-            except Exception:
-                pass
-
         # 处理 content blocks
         tool_use_blocks = []
+        turn_text = ""
         for block in response.content:
             if block.type == "text" and block.text.strip():
+                turn_text += block.text
                 yield _sse_event("text", {"content": block.text})
             elif block.type == "tool_use":
                 tool_use_blocks.append(block)
@@ -166,6 +158,21 @@ async def _run_agentic_loop(
                         "input": block.input,
                     },
                 )
+
+        if turn_text:
+            last_assistant_text = turn_text
+
+        # 记录本轮 LLM 调用到 Langfuse（含实际输出文本）
+        if trace:
+            try:
+                trace.generation(
+                    name=f"turn-{turn}",
+                    model=model,
+                    output=turn_text or None,
+                    usage={"input": response.usage.input_tokens, "output": response.usage.output_tokens},
+                )
+            except Exception:
+                pass
 
         # 无 tool use，结束循环
         if response.stop_reason != "tool_use" or not tool_use_blocks:
@@ -255,6 +262,13 @@ async def _run_agentic_loop(
             if block.type == "text" and block.text.strip():
                 yield _sse_event("text", {"content": block.text})
 
+    # 将最终回复写入 Langfuse trace
+    if trace and last_assistant_text:
+        try:
+            trace.update(output=last_assistant_text)
+        except Exception:
+            pass
+
     # 完成事件
     yield _sse_event(
         "done",
@@ -329,12 +343,6 @@ async def chat(request: ChatRequest):
             logger.error(f"Chat error: {e}", exc_info=True)
             yield _sse_event("error", {"message": str(e)})
         finally:
-            # 确保 trace 数据在响应结束前推送到 Langfuse
-            if trace:
-                try:
-                    trace.update(output=None)
-                except Exception:
-                    pass
             _lf_flush()
 
     return StreamingResponse(
