@@ -71,16 +71,25 @@ class AgentConfig:
         """Load config with explicit priority order (low → high):
 
           1. 代码默认值
-          2. .env 文件（由 cli.py load_dotenv(override=False) 加载，只填充未设置的变量）
-          3. 真实环境变量（shell / k8s ConfigMap & Secret）
-          4. ~/.ci-agent/config.json（最高优先级，用户显式配置）
+          2. ~/.ci-agent/config.json（用户本地配置文件）
+          3. .env 文件（由 cli.py load_dotenv(override=False) 加载，只填充未设置的变量）
+          4. 真实环境变量（shell / k8s ConfigMap & Secret，最高优先级）
 
-        .env 仅作开发时兜底，生产环境（k8s）通常不存在该文件，故为 no-op。
-        JSON 文件优先于环境变量，确保用户显式保存的设置不被外部环境覆盖。
+        环境变量优先于文件配置，确保 k8s Secret/ConfigMap 可以覆盖本地设置。
         """
         config = cls()
 
-        # Step 1+2: 环境变量（含 .env 已注入的值）作为中间层
+        # Step 1: ~/.ci-agent/config.json 作为基础层
+        if CONFIG_FILE.exists():
+            try:
+                data = json.loads(CONFIG_FILE.read_text())
+                for key, value in data.items():
+                    if hasattr(config, key) and value is not None:
+                        setattr(config, key, value)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # Step 2: 环境变量最后覆盖，优先级最高（k8s Secret / shell export）
         if env_key := os.getenv("ANTHROPIC_API_KEY"):
             config.anthropic_api_key = env_key
         if env_token := os.getenv("GITHUB_TOKEN"):
@@ -117,17 +126,6 @@ class AgentConfig:
             try:
                 config.diagnose_signature_ttl_hours = max(1, int(env_sig_ttl))
             except ValueError:
-                pass
-
-        # Step 3: ~/.ci-agent/config.json 最后覆盖，优先级最高
-        # 只覆盖 JSON 中非 None 的字段，未设置的字段保留环境变量值
-        if CONFIG_FILE.exists():
-            try:
-                data = json.loads(CONFIG_FILE.read_text())
-                for key, value in data.items():
-                    if hasattr(config, key) and value is not None:
-                        setattr(config, key, value)
-            except (json.JSONDecodeError, OSError):
                 pass
 
         return config
