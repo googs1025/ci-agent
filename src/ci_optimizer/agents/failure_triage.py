@@ -158,6 +158,7 @@ async def _call_anthropic(
         # 将 LLM 调用记录为 Langfuse 子 generation（挂在 @langfuse_observe 的 trace 下）
         try:
             from langfuse.decorators import langfuse_context
+
             langfuse_context.update_current_observation(
                 model=model,
                 input=user_message,
@@ -206,6 +207,7 @@ async def _call_openai(
         if resp.usage:
             try:
                 from langfuse.decorators import langfuse_context
+
                 langfuse_context.update_current_observation(
                     model=model,
                     input=user_message,
@@ -284,6 +286,7 @@ async def diagnose(
     if session_id:
         try:
             from langfuse.decorators import langfuse_context
+
             langfuse_context.update_current_trace(session_id=session_id, input=excerpt[:200])
         except Exception:
             pass

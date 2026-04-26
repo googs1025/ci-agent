@@ -129,6 +129,7 @@ async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skil
     # 用 langfuse_context 把 tool/generation span 挂在父 @langfuse_observe trace 下
     try:
         from langfuse.decorators import langfuse_context as _lf_ctx
+
         _lf_ctx.update_current_observation(input=prompt[:500])
     except Exception:
         pass
@@ -144,6 +145,7 @@ async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skil
                 if message.usage:
                     try:
                         from langfuse.decorators import langfuse_context as _lf_ctx
+
                         inp = message.usage.get("input_tokens", 0)
                         out = message.usage.get("output_tokens", 0)
                         _lf_ctx.update_current_observation(

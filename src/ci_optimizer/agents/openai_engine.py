@@ -141,6 +141,7 @@ async def run_analysis_openai(
     if session_id:
         try:
             from langfuse.decorators import langfuse_context
+
             langfuse_context.update_current_trace(
                 session_id=session_id,
                 input=f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path),
@@ -150,6 +151,7 @@ async def run_analysis_openai(
 
     if _lf_enabled():
         from langfuse.openai import AsyncOpenAI as LfAsyncOpenAI
+
         client = LfAsyncOpenAI(api_key=config.openai_api_key, base_url=config.base_url)
     else:
         client = AsyncOpenAI(api_key=config.openai_api_key, base_url=config.base_url)

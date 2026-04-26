@@ -138,6 +138,7 @@ async def run_analysis(
     if session_id:
         try:
             from langfuse.decorators import langfuse_context
+
             langfuse_context.update_current_trace(session_id=session_id, input=ctx.repo)
         except Exception:
             pass

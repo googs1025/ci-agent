@@ -427,7 +427,9 @@ async def run_tui(repo_path: Path | None = None) -> None:
             # Natural language → server /api/chat
             _query_task = None
             try:
-                _query_task = asyncio.create_task(_query_via_server(user_input, ctx, config, renderer, conversation, server_url, session_id=chat_session_id))
+                _query_task = asyncio.create_task(
+                    _query_via_server(user_input, ctx, config, renderer, conversation, server_url, session_id=chat_session_id)
+                )
                 await _query_task
             except KeyboardInterrupt:
                 if _query_task and not _query_task.done():
