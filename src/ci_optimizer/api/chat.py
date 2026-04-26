@@ -164,9 +164,10 @@ async def _run_agentic_loop(
             last_assistant_text = turn_text
 
         # 记录本轮 LLM 调用到 Langfuse（含实际输出文本）
+        lf_generation = None
         if trace:
             try:
-                trace.generation(
+                lf_generation = trace.generation(
                     name=f"turn-{turn}",
                     model=model,
                     output=turn_text or None,
@@ -177,6 +178,13 @@ async def _run_agentic_loop(
                         "unit": "TOKENS",
                     },
                 )
+                # 把每个 tool_use block 作为 generation 的子 span 记录
+                for tb in tool_use_blocks:
+                    lf_generation.span(
+                        name=tb.name,
+                        input=tb.input,
+                        metadata={"tool_id": tb.id, "type": "tool_use"},
+                    )
             except Exception:
                 pass
 
@@ -220,7 +228,7 @@ async def _run_agentic_loop(
             )
             return  # 结束生成器，等待 apply 请求
 
-        # 只读工具——直接执行
+        # 只读工具——直接执行，执行结果也写入 Langfuse span
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
         for tool_block in read_blocks:
@@ -229,6 +237,17 @@ async def _run_agentic_loop(
                 tool_block.input,
                 repo_root=repo_root,
             )
+            # 更新对应 span 的 output
+            if lf_generation:
+                try:
+                    lf_generation.span(
+                        name=f"{tool_block.name}:result",
+                        input=tool_block.input,
+                        output=result[:500] if len(result) > 500 else result,
+                        metadata={"tool_id": tool_block.id, "type": "tool_result"},
+                    )
+                except Exception:
+                    pass
             tool_results.append(
                 {
                     "type": "tool_result",
