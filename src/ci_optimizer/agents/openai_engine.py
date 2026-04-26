@@ -110,6 +110,7 @@ async def _call_specialist(
         ],
         temperature=0.2,
         stream=True,
+        stream_options={"include_usage": True},  # 让最后一个 chunk 携带 token 用量，供 Langfuse 记录
     )
     async for chunk in stream:
         if chunk.choices:
@@ -227,6 +228,7 @@ async def _run_analysis_with_client(
             ],
             temperature=0.1,
             stream=True,
+            stream_options={"include_usage": True},
         )
         async for chunk in stream:
             if chunk.choices:
