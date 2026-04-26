@@ -153,7 +153,7 @@ async def run_analysis(
     if config.provider == "openai":
         from ci_optimizer.agents.openai_engine import run_analysis_openai
 
-        return await run_analysis_openai(ctx, config, skills)
+        return await run_analysis_openai(ctx, config, skills, session_id=session_id)
     else:
         from ci_optimizer.agents.anthropic_engine import run_analysis_anthropic
 

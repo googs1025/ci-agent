@@ -119,7 +119,12 @@ async def _call_specialist(
     return "".join(collected)
 
 
-async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":  # noqa: E501
+async def run_analysis_openai(
+    ctx: AnalysisContext,
+    config: AgentConfig,
+    skills: "list[Skill]",
+    session_id: str | None = None,
+) -> "AnalysisResult":
     """使用 OpenAI-compatible API 执行两阶段多专家分析。
 
     Run analysis using OpenAI-compatible API with parallel specialist calls.
@@ -127,22 +132,44 @@ async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills:
     """
     start_time = time.time()
 
-    # Use Langfuse drop-in when tracing is enabled
+    from ci_optimizer.agents.tracing import flush, get_langfuse
     from ci_optimizer.agents.tracing import is_enabled as _lf_enabled
 
+    # 创建父级 trace，让 drop-in client 的 generation span 都挂在它下面
+    lf_trace = None
     if _lf_enabled():
+        try:
+            lf = get_langfuse()
+            if lf:
+                lf_trace = lf.trace(
+                    name="ci-agent-analyze",
+                    input=f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path),
+                    session_id=session_id,
+                    metadata={"model": config.model, "provider": "openai", "skills": [s.name for s in skills]},
+                )
+        except Exception:
+            pass
+
         from langfuse.openai import AsyncOpenAI as LfAsyncOpenAI
 
-        client = LfAsyncOpenAI(api_key=config.openai_api_key, base_url=config.base_url)
+        client = LfAsyncOpenAI(
+            api_key=config.openai_api_key,
+            base_url=config.base_url,
+            **({"trace_id": lf_trace.id} if lf_trace else {}),
+        )
     else:
         client = AsyncOpenAI(api_key=config.openai_api_key, base_url=config.base_url)
 
     try:
-        return await _run_analysis_with_client(client, ctx, config, start_time, skills)
+        result = await _run_analysis_with_client(client, ctx, config, start_time, skills)
+        if lf_trace:
+            try:
+                lf_trace.update(output=f"{len(result.findings)} findings, cost=${result.cost_usd:.4f}")
+            except Exception:
+                pass
+        return result
     finally:
         await client.close()
-        from ci_optimizer.agents.tracing import flush
-
         flush()
 
 
