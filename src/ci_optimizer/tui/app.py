@@ -96,6 +96,7 @@ def _start_server_background(port: int = 8000) -> subprocess.Popen:
         [sys.executable, "-m", "uvicorn", "ci_optimizer.api.app:app", "--host", "127.0.0.1", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        start_new_session=True,  # 独立进程组，不继承 TUI 的 SIGINT
     )
     return proc
 
