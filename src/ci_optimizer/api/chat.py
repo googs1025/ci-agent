@@ -77,6 +77,7 @@ class ChatRequest(BaseModel):
     branch: str | None = None
     model: str | None = None  # override per-request
     repo_root: str | None = None  # absolute path to repo on server filesystem
+    session_id: str | None = None  # Langfuse session grouping — caller维持同一 ID 即可聚合多轮对话
 
 
 # ── SSE helpers ──────────────────────────────────────────────────────────────
@@ -332,6 +333,7 @@ async def chat(request: ChatRequest):
                 trace = lf.trace(
                     name="chat",
                     input=user_input,
+                    session_id=request.session_id,
                     metadata={"repo": request.repo, "branch": request.branch, "model": model},
                 )
             except Exception:
