@@ -120,6 +120,7 @@ async def run_analysis(
     ctx: AnalysisContext,
     config: AgentConfig | None = None,
     selected_skills: list[str] | None = None,
+    session_id: str | None = None,
 ) -> AnalysisResult:
     """执行 CI 分析的顶层入口，按配置的 provider 路由到对应引擎。
 
@@ -133,6 +134,13 @@ async def run_analysis(
     """
     if config is None:
         config = AgentConfig.load()
+
+    if session_id:
+        try:
+            from langfuse.decorators import langfuse_context
+            langfuse_context.update_current_trace(session_id=session_id, input=ctx.repo)
+        except Exception:
+            pass
 
     from ci_optimizer.agents.skill_registry import get_registry
 

@@ -44,6 +44,7 @@ class AnalyzeRequest(BaseModel):
     filters: FilterSchema | None = None
     agent_config: AgentConfigSchema | None = None  # per-request overrides
     skills: list[str] | None = None  # dimension names to run, None = all
+    session_id: str | None = None  # Langfuse session grouping — caller 维持同一 ID 可聚合多次调用
 
 
 class FindingSchema(BaseModel):
@@ -227,6 +228,7 @@ class DiagnoseRequest(BaseModel):
     run_id: int  # GitHub workflow_run.id
     run_attempt: int = 1
     tier: DiagnoseTier = "default"
+    session_id: str | None = None  # Langfuse session grouping
 
 
 class DiagnoseResponse(BaseModel):

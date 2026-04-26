@@ -350,7 +350,7 @@ async def chat(request: ChatRequest):
             try:
                 user_input = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
                 trace = lf.trace(
-                    name="chat",
+                    name="ci-agent-chat",
                     input=user_input,
                     session_id=request.session_id,
                     metadata={"repo": request.repo, "branch": request.branch, "model": model},

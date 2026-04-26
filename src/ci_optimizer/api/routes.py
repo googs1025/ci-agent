@@ -94,6 +94,7 @@ async def _run_analysis_task(
     filters: AnalysisFilters | None,
     config: AgentConfig | None = None,
     selected_skills: list[str] | None = None,
+    session_id: str | None = None,
 ):
     """后台分析任务：在独立协程中完整执行"预取→分析→格式化→入库"流水线。
     成功时将报告写入 DB，失败时记录错误状态。finally 块负责清理临时文件和克隆目录。
@@ -121,7 +122,7 @@ async def _run_analysis_task(
             resolved = resolve_input(repo_input)
             ctx = await prepare_context(resolved, filters, required_data=required_data)
             logger.info(f"[report={report_id}] Prefetch done: {len(ctx.workflow_files)} workflows, required={required_data}")
-            result = await run_analysis(ctx, config=config, selected_skills=selected_skills)
+            result = await run_analysis(ctx, config=config, selected_skills=selected_skills, session_id=session_id)
             logger.info(f"[report={report_id}] Analysis done: {len(result.findings)} findings, {len(result.raw_report)} chars raw")
 
             lang = config.language if config else "en"
@@ -212,7 +213,7 @@ async def analyze(
     report = await create_report(db, db_repo.id, filters_json, filters_hash=fhash)
     await db.commit()
 
-    background_tasks.add_task(_run_analysis_task, report.id, request.repo, filters, config, request.skills)
+    background_tasks.add_task(_run_analysis_task, report.id, request.repo, filters, config, request.skills, request.session_id)
 
     return {"report_id": report.id, "status": "running"}
 

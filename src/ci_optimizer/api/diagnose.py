@@ -109,6 +109,7 @@ async def run_diagnosis(
     tier: Literal["default", "deep"],
     source: Literal["manual", "webhook_auto"],
     config: AgentConfig | None = None,
+    session_id: str | None = None,
 ) -> DiagnoseResponse:
     """核心诊断流程——被手动 API 和 webhook 自动路径共同复用。
 
@@ -199,6 +200,7 @@ async def run_diagnosis(
             workflow=workflow_name,
             model=model,
             config=config,
+            session_id=session_id,
         )
     except FailureTriageError as e:
         logger.error("diagnose: triage failed: %s", e)
@@ -251,6 +253,7 @@ async def diagnose_run(
         run_attempt=req.run_attempt,
         tier=req.tier,
         source="manual",
+        session_id=req.session_id,
     )
 
 

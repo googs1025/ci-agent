@@ -154,10 +154,23 @@ async def _call_anthropic(
         )
         parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
         text = "".join(parts)
-        # Anthropic SDK exposes usage but not cost; caller may compute via Langfuse.
-        # Anthropic SDK exposes usage but not cost; caller may compute via Langfuse.
-        # 此处基于内置价格表做本地估算，Langfuse 可提供更精确的追踪数据
         cost = _estimate_anthropic_cost(model, resp.usage.input_tokens, resp.usage.output_tokens)
+        # 将 LLM 调用记录为 Langfuse 子 generation（挂在 @langfuse_observe 的 trace 下）
+        try:
+            from langfuse.decorators import langfuse_context
+            langfuse_context.update_current_observation(
+                model=model,
+                input=user_message,
+                output=text,
+                usage={
+                    "input": resp.usage.input_tokens,
+                    "output": resp.usage.output_tokens,
+                    "total": resp.usage.input_tokens + resp.usage.output_tokens,
+                    "unit": "TOKENS",
+                },
+            )
+        except Exception:
+            pass
         return text, cost
     finally:
         await client.close()
@@ -189,6 +202,23 @@ async def _call_openai(
         choice = resp.choices[0] if resp.choices else None
         text = (choice.message.content or "") if choice else ""
         cost = _estimate_openai_cost(model, resp.usage.prompt_tokens, resp.usage.completion_tokens) if resp.usage else None
+        # 将 LLM 调用记录为 Langfuse 子 generation
+        if resp.usage:
+            try:
+                from langfuse.decorators import langfuse_context
+                langfuse_context.update_current_observation(
+                    model=model,
+                    input=user_message,
+                    output=text,
+                    usage={
+                        "input": resp.usage.prompt_tokens,
+                        "output": resp.usage.completion_tokens,
+                        "total": resp.usage.total_tokens,
+                        "unit": "TOKENS",
+                    },
+                )
+            except Exception:
+                pass
         return text, cost
     finally:
         await client.close()
@@ -232,6 +262,7 @@ async def diagnose(
     workflow: str,
     model: str,
     config: AgentConfig,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """对单条 CI 错误日志片段执行故障诊断，是本模块对外暴露的唯一公共接口。
 
@@ -249,6 +280,13 @@ async def diagnose(
     """
     if not excerpt.strip():
         raise FailureTriageError("empty excerpt — nothing to diagnose")
+
+    if session_id:
+        try:
+            from langfuse.decorators import langfuse_context
+            langfuse_context.update_current_trace(session_id=session_id, input=excerpt[:200])
+        except Exception:
+            pass
 
     prompt = _load_prompt()
     user_message = _build_user_message(workflow=workflow, failing_step=failing_step, excerpt=excerpt)
