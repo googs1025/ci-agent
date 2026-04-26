@@ -68,24 +68,28 @@ class AgentConfig:
 
     @classmethod
     def load(cls) -> "AgentConfig":
-        """Load config from file, env vars, with env vars taking priority.
+        """Load config with explicit priority order (low → high):
 
-        加载优先级：默认值 < JSON 文件 < 环境变量。
-        环境变量始终覆盖文件配置，方便 CI 场景下无感注入密钥。
+          1. 代码默认值
+          2. ~/.ci-agent/config.json（用户本地配置文件）
+          3. .env 文件（由 cli.py load_dotenv(override=False) 加载，只填充未设置的变量）
+          4. 真实环境变量（shell / k8s ConfigMap & Secret，最高优先级）
+
+        环境变量优先于文件配置，确保 k8s Secret/ConfigMap 可以覆盖本地设置。
         """
         config = cls()
 
-        # Load from config file
+        # Step 1: ~/.ci-agent/config.json 作为基础层
         if CONFIG_FILE.exists():
             try:
                 data = json.loads(CONFIG_FILE.read_text())
                 for key, value in data.items():
-                    if hasattr(config, key):
+                    if hasattr(config, key) and value is not None:
                         setattr(config, key, value)
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Env vars override file config
+        # Step 2: 环境变量最后覆盖，优先级最高（k8s Secret / shell export）
         if env_key := os.getenv("ANTHROPIC_API_KEY"):
             config.anthropic_api_key = env_key
         if env_token := os.getenv("GITHUB_TOKEN"):
@@ -110,7 +114,6 @@ class AgentConfig:
             config.diagnose_auto_on_webhook = env_auto.lower() in ("1", "true", "yes")
         if env_sample := os.getenv("DIAGNOSE_SAMPLE_RATE"):
             try:
-                # 强制钳位到 [0.0, 1.0]，防止调用方传入非法比率导致全量诊断失控
                 config.diagnose_sample_rate = max(0.0, min(1.0, float(env_sample)))
             except ValueError:
                 pass

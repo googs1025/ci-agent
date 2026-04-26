@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ci_optimizer.agents.tracing import flush as _lf_flush
+from ci_optimizer.agents.tracing import get_langfuse
 from ci_optimizer.api.auth import verify_api_key
 from ci_optimizer.api.tools import ANTHROPIC_TOOLS, TOOL_DEFINITIONS, WRITE_TOOL_NAMES, execute_tool, preview_write
 from ci_optimizer.config import AgentConfig
@@ -75,6 +77,7 @@ class ChatRequest(BaseModel):
     branch: str | None = None
     model: str | None = None  # override per-request
     repo_root: str | None = None  # absolute path to repo on server filesystem
+    session_id: str | None = None  # Langfuse session grouping — caller维持同一 ID 即可聚合多轮对话
 
 
 # ── SSE helpers ──────────────────────────────────────────────────────────────
@@ -112,6 +115,7 @@ async def _run_agentic_loop(
     messages: list[dict],
     repo_root: Path | None,
     max_turns: int = 10,
+    trace=None,
 ):
     """多轮 tool-use 循环。Yield SSE 事件字符串。
 
@@ -124,6 +128,7 @@ async def _run_agentic_loop(
     total_input = 0
     total_output = 0
     turn = 0
+    last_assistant_text = ""
 
     for turn in range(max_turns):
         response = await client.messages.create(
@@ -139,8 +144,10 @@ async def _run_agentic_loop(
 
         # 处理 content blocks
         tool_use_blocks = []
+        turn_text = ""
         for block in response.content:
             if block.type == "text" and block.text.strip():
+                turn_text += block.text
                 yield _sse_event("text", {"content": block.text})
             elif block.type == "tool_use":
                 tool_use_blocks.append(block)
@@ -152,6 +159,34 @@ async def _run_agentic_loop(
                         "input": block.input,
                     },
                 )
+
+        if turn_text:
+            last_assistant_text = turn_text
+
+        # 记录本轮 LLM 调用到 Langfuse（含实际输出文本）
+        lf_generation = None
+        if trace:
+            try:
+                lf_generation = trace.generation(
+                    name=f"turn-{turn}",
+                    model=model,
+                    output=turn_text or None,
+                    usage={
+                        "input": response.usage.input_tokens,
+                        "output": response.usage.output_tokens,
+                        "total": response.usage.input_tokens + response.usage.output_tokens,
+                        "unit": "TOKENS",
+                    },
+                )
+                # 把每个 tool_use block 作为 generation 的子 span 记录
+                for tb in tool_use_blocks:
+                    lf_generation.span(
+                        name=tb.name,
+                        input=tb.input,
+                        metadata={"tool_id": tb.id, "type": "tool_use"},
+                    )
+            except Exception:
+                pass
 
         # 无 tool use，结束循环
         if response.stop_reason != "tool_use" or not tool_use_blocks:
@@ -193,7 +228,7 @@ async def _run_agentic_loop(
             )
             return  # 结束生成器，等待 apply 请求
 
-        # 只读工具——直接执行
+        # 只读工具——直接执行，执行结果也写入 Langfuse span
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
         for tool_block in read_blocks:
@@ -202,6 +237,17 @@ async def _run_agentic_loop(
                 tool_block.input,
                 repo_root=repo_root,
             )
+            # 更新对应 span 的 output
+            if lf_generation:
+                try:
+                    lf_generation.span(
+                        name=f"{tool_block.name}:result",
+                        input=tool_block.input,
+                        output=result[:500] if len(result) > 500 else result,
+                        metadata={"tool_id": tool_block.id, "type": "tool_result"},
+                    )
+                except Exception:
+                    pass
             tool_results.append(
                 {
                     "type": "tool_result",
@@ -240,6 +286,13 @@ async def _run_agentic_loop(
         for block in summary_resp.content:
             if block.type == "text" and block.text.strip():
                 yield _sse_event("text", {"content": block.text})
+
+    # 将最终回复写入 Langfuse trace
+    if trace and last_assistant_text:
+        try:
+            trace.update(output=last_assistant_text)
+        except Exception:
+            pass
 
     # 完成事件
     yield _sse_event(
@@ -290,16 +343,33 @@ async def chat(request: ChatRequest):
         # 构建 messages
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
+        # 创建 Langfuse trace（未配置时 get_langfuse() 返回 None，静默跳过）
+        lf = get_langfuse()
+        trace = None
+        if lf:
+            try:
+                user_input = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+                trace = lf.trace(
+                    name="ci-agent-chat",
+                    input=user_input,
+                    session_id=request.session_id,
+                    metadata={"repo": request.repo, "branch": request.branch, "model": model},
+                )
+            except Exception:
+                pass
+
         try:
             if config.provider == "openai":
-                async for chunk in _query_openai(messages, system, model, config, repo_root):
+                async for chunk in _query_openai(messages, system, model, config, repo_root, trace=trace):
                     yield chunk
             else:
-                async for chunk in _query_anthropic(messages, system, model, api_key, base_url, repo_root):
+                async for chunk in _query_anthropic(messages, system, model, api_key, base_url, repo_root, trace=trace):
                     yield chunk
         except Exception as e:
             logger.error(f"Chat error: {e}", exc_info=True)
             yield _sse_event("error", {"message": str(e)})
+        finally:
+            _lf_flush()
 
     return StreamingResponse(
         _generate(),
@@ -352,6 +422,7 @@ async def _query_anthropic(
     api_key: str | None,
     base_url: str | None,
     repo_root: Path | None = None,
+    trace=None,
 ):
     """通过 Anthropic SDK 查询，支持 tool use 和代理。
     base_url 会做后缀清理（去掉 /v1/messages 或 /v1），因为 SDK 自动拼接路径。
@@ -376,6 +447,7 @@ async def _query_anthropic(
         messages=messages,
         repo_root=repo_root,
         max_turns=config.max_turns,
+        trace=trace,
     ):
         yield event
 
@@ -386,6 +458,7 @@ async def _query_openai(
     model: str,
     config: AgentConfig,
     repo_root: "Path | None" = None,
+    trace=None,
 ):
     """通过 OpenAI SDK 查询，支持多轮 tool use（OpenAI function calling 格式）。
     注意：OpenAI 路径目前不实现 write_proposal 拦截，写操作会直接执行。
@@ -411,6 +484,20 @@ async def _query_openai(
         msg = choice.message
         if response.usage:
             total_tokens += response.usage.total_tokens
+            if trace:
+                try:
+                    trace.generation(
+                        name=f"turn-{turn}",
+                        model=model,
+                        usage={
+                            "input": response.usage.prompt_tokens,
+                            "output": response.usage.completion_tokens,
+                            "total": response.usage.total_tokens,
+                            "unit": "TOKENS",
+                        },
+                    )
+                except Exception:
+                    pass
 
         # Text response
         if msg.content:

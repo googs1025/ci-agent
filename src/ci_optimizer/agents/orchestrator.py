@@ -115,11 +115,12 @@ def _parse_result(
     return raw_text, [], {"total_findings": 0}
 
 
-@langfuse_observe(name="ci-analysis")
+@langfuse_observe(name="ci-agent-analyze")
 async def run_analysis(
     ctx: AnalysisContext,
     config: AgentConfig | None = None,
     selected_skills: list[str] | None = None,
+    session_id: str | None = None,
 ) -> AnalysisResult:
     """执行 CI 分析的顶层入口，按配置的 provider 路由到对应引擎。
 
@@ -134,6 +135,14 @@ async def run_analysis(
     if config is None:
         config = AgentConfig.load()
 
+    if session_id:
+        try:
+            from langfuse.decorators import langfuse_context
+
+            langfuse_context.update_current_trace(session_id=session_id, input=ctx.repo)
+        except Exception:
+            pass
+
     from ci_optimizer.agents.skill_registry import get_registry
 
     registry = get_registry()
@@ -145,7 +154,7 @@ async def run_analysis(
     if config.provider == "openai":
         from ci_optimizer.agents.openai_engine import run_analysis_openai
 
-        return await run_analysis_openai(ctx, config, skills)
+        return await run_analysis_openai(ctx, config, skills, session_id=session_id)
     else:
         from ci_optimizer.agents.anthropic_engine import run_analysis_anthropic
 

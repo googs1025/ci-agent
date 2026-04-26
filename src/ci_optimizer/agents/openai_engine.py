@@ -20,6 +20,7 @@ from openai import AsyncOpenAI
 logger = logging.getLogger(__name__)
 
 from ci_optimizer.agents.prompts import LANGUAGE_INSTRUCTIONS
+from ci_optimizer.agents.tracing import langfuse_observe
 from ci_optimizer.config import AgentConfig
 from ci_optimizer.prefetch import AnalysisContext
 
@@ -109,6 +110,7 @@ async def _call_specialist(
         ],
         temperature=0.2,
         stream=True,
+        stream_options={"include_usage": True},  # 让最后一个 chunk 携带 token 用量，供 Langfuse 记录
     )
     async for chunk in stream:
         if chunk.choices:
@@ -119,16 +121,33 @@ async def _call_specialist(
     return "".join(collected)
 
 
-async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":  # noqa: E501
+@langfuse_observe(name="ci-agent-analyze-openai")
+async def run_analysis_openai(
+    ctx: AnalysisContext,
+    config: AgentConfig,
+    skills: "list[Skill]",
+    session_id: str | None = None,
+) -> "AnalysisResult":
     """使用 OpenAI-compatible API 执行两阶段多专家分析。
 
     Run analysis using OpenAI-compatible API with parallel specialist calls.
-    当 Langfuse tracing 启用时，替换 AsyncOpenAI client 为 langfuse 的 drop-in 版本以自动追踪 LLM 调用。
+    @langfuse_observe 建立父级 trace 上下文，drop-in client 的每次 LLM 调用会自动作为子 span 挂上来。
     """
     start_time = time.time()
 
-    # Use Langfuse drop-in when tracing is enabled
+    from ci_optimizer.agents.tracing import flush
     from ci_optimizer.agents.tracing import is_enabled as _lf_enabled
+
+    if session_id:
+        try:
+            from langfuse.decorators import langfuse_context
+
+            langfuse_context.update_current_trace(
+                session_id=session_id,
+                input=f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path),
+            )
+        except Exception:
+            pass
 
     if _lf_enabled():
         from langfuse.openai import AsyncOpenAI as LfAsyncOpenAI
@@ -141,8 +160,6 @@ async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills:
         return await _run_analysis_with_client(client, ctx, config, start_time, skills)
     finally:
         await client.close()
-        from ci_optimizer.agents.tracing import flush
-
         flush()
 
 
@@ -213,6 +230,7 @@ async def _run_analysis_with_client(
             ],
             temperature=0.1,
             stream=True,
+            stream_options={"include_usage": True},
         )
         async for chunk in stream:
             if chunk.choices:

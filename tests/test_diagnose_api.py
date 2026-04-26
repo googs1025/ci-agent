@@ -235,7 +235,7 @@ class TestDiagnoseEndpoint:
     async def test_deep_tier_uses_sonnet_model(self, client):
         captured_model: dict[str, str] = {}
 
-        async def _fake_diagnose(*, excerpt, failing_step, workflow, model, config):
+        async def _fake_diagnose(*, excerpt, failing_step, workflow, model, config, session_id=None):
             captured_model["model"] = model
             return {**_FAKE_LLM_DIAG, "model": model}
 

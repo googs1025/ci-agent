@@ -19,6 +19,7 @@ import contextlib
 import json
 import os
 import subprocess
+import uuid
 from pathlib import Path
 
 import httpx
@@ -95,6 +96,7 @@ def _start_server_background(port: int = 8000) -> subprocess.Popen:
         [sys.executable, "-m", "uvicorn", "ci_optimizer.api.app:app", "--host", "127.0.0.1", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        start_new_session=True,  # 独立进程组，不继承 TUI 的 SIGINT
     )
     return proc
 
@@ -211,6 +213,7 @@ async def _query_via_server(
     renderer: StreamRenderer,
     conversation: list[dict],
     server_url: str,
+    session_id: str | None = None,
 ) -> None:
     """将用户消息 POST 到 /api/chat，逐行消费 SSE 事件流并实时渲染到终端。
     事件类型处理逻辑：
@@ -229,6 +232,7 @@ async def _query_via_server(
         "branch": ctx.branch,
         "model": config.model,
         "repo_root": str(ctx.local_path),
+        "session_id": session_id,
     }
 
     # Immediate visual feedback — shown before the HTTP request even starts
@@ -371,6 +375,7 @@ async def run_tui(repo_path: Path | None = None) -> None:
     # REPL
     session = build_session()
     conversation: list[dict] = []
+    chat_session_id = str(uuid.uuid4())  # 同一次 TUI 会话内共享，用于 Langfuse sessions 聚合
 
     try:
         while True:
@@ -422,7 +427,9 @@ async def run_tui(repo_path: Path | None = None) -> None:
             # Natural language → server /api/chat
             _query_task = None
             try:
-                _query_task = asyncio.create_task(_query_via_server(user_input, ctx, config, renderer, conversation, server_url))
+                _query_task = asyncio.create_task(
+                    _query_via_server(user_input, ctx, config, renderer, conversation, server_url, session_id=chat_session_id)
+                )
                 await _query_task
             except KeyboardInterrupt:
                 if _query_task and not _query_task.done():
