@@ -6,6 +6,16 @@ v1 replaces v0's in-memory cache with DB persistence:
 - Daily budget tracker for webhook auto-diagnosis (manual calls always proceed)
 
 v0 in-memory cache is removed. Frontend integration lands in v2 (#32).
+
+架构角色：
+  本文件提供 CI 失败诊断的 REST 端点，核心是 run_diagnosis() 共享函数——
+  手动 API 调用和 webhook 自动诊断两条路径都复用它。
+  三级缓存策略（精确缓存 → 签名缓存 → 新鲜 LLM 调用）在此函数中实现，
+  目的是控制 LLM 调用成本，对相同错误模式复用已有诊断结果。
+  diagnose_router 挂载在 /api 下，提供：
+    POST /ci-runs/diagnose          — 手动诊断单次 run
+    GET  /diagnoses/by-signature/:sig — 查询同签名失败的历史聚合
+    GET  /repos/:owner/:repo/failed-runs — 列出仓库最近失败 run（直查 GitHub）
 """
 
 from __future__ import annotations
@@ -47,7 +57,9 @@ _REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 
 
 def _pick_failed_job(jobs: list[dict]) -> dict | None:
-    """Return the first failed job from a list. v0/v1 handles one job per run."""
+    """Return the first failed job from a list. v0/v1 handles one job per run.
+    只取第一个失败 job，以保持诊断结果的单一性，避免混合多个 job 的错误信息。
+    """
     for job in jobs:
         if job.get("conclusion") == "failure":
             return job
@@ -98,12 +110,14 @@ async def run_diagnosis(
     source: Literal["manual", "webhook_auto"],
     config: AgentConfig | None = None,
 ) -> DiagnoseResponse:
-    """Core diagnosis flow — shared by manual API + webhook auto path.
+    """核心诊断流程——被手动 API 和 webhook 自动路径共同复用。
 
-    Cache order:
-        1. Exact cache: same (repo, run, attempt, tier)
-        2. Signature cache: same normalized error within TTL window
-        3. Fresh diagnosis via LLM
+    三级缓存策略：
+        1. 精确缓存：完全相同的 (repo, run, attempt, tier) 直接命中
+        2. 签名缓存：相同归一化错误在 TTL 窗口内复用旧诊断，并为本次 run 存一条新记录（下次精确命中）
+        3. 新鲜 LLM 调用：调用 failure_triage skill，结果持久化到 DB
+    日志提取（extract_error_excerpt）和签名计算（compute_signature）在拿到 log 后立即完成，
+    以便在进入缓存查找前就有确定的签名。
     """
     config = config or AgentConfig.load()
     db_repo = await get_or_create_repo(db, owner, repo_name)
@@ -129,6 +143,8 @@ async def run_diagnosis(
 
         # Fetch the log of the specific failing job, not the whole-run ZIP,
         # so we don't mix output from unrelated passing jobs.
+        # 优先拉取单个失败 job 的日志，避免整个 run ZIP 包中混入其他 job 的噪音；
+        # 若 job 日志不可用（如已过期），退而使用整个 run 的日志。
         log_text = await gh.get_job_log(owner, repo_name, failing_job["id"], max_lines=2000)
         if not log_text:
             # Fall back to whole-run log if per-job fetch fails (e.g., log expired)
@@ -316,6 +332,8 @@ async def list_failed_runs(
 
     Queries GitHub directly (no DB persistence) so the picker works even
     on repos that have never been analyzed. Returns most recent first.
+    直接查 GitHub API，不走 DB 缓存，因此未被分析过的仓库也能使用此端点（诊断选择器）。
+    GitHub 的 status 过滤不支持 "failure"，需拉取 completed 后客户端过滤。
     """
     if not _REPO_RE.match(f"{owner}/{repo_name}"):
         raise HTTPException(status_code=400, detail="invalid owner/repo")

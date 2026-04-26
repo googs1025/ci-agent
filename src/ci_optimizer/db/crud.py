@@ -1,4 +1,10 @@
-"""CRUD operations for CI Agent database."""
+"""CRUD operations for CI Agent database.
+
+架构角色：数据访问层（DAL），将所有 SQL 逻辑集中到一处，上层服务只调用函数而无需编写 ORM 查询。
+核心职责：提供仓库、报告、发现项和失败诊断的增删改查接口，以及缓存命中判断和看板统计聚合。
+与其他模块的关系：依赖 models.py 的 ORM 类；被 FastAPI 路由、AI 技能、Webhook 处理器调用；
+database.py 提供 async_session 工厂注入此模块的每个函数。
+"""
 
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -11,7 +17,11 @@ from ci_optimizer.db.models import AnalysisReport, FailureDiagnosis, Finding, Re
 
 
 def compute_filters_hash(filters_json: str | None) -> str:
-    """Return a short deterministic hash for the given filters JSON string."""
+    """Return a short deterministic hash for the given filters JSON string.
+
+    生成过滤条件的 12 位 MD5 指纹，用作报告缓存的 key。
+    None 和空字符串视为等价（"无过滤"），统一映射到相同 hash。
+    """
     content = filters_json or ""
     return hashlib.md5(content.encode()).hexdigest()[:12]
 
@@ -22,7 +32,11 @@ async def find_cached_report(
     filters_hash: str,
     ttl_hours: int = 24,
 ) -> AnalysisReport | None:
-    """Return the most recent completed report matching the cache key within TTL."""
+    """Return the most recent completed report matching the cache key within TTL.
+
+    避免对同一仓库+过滤条件在 TTL 窗口内重复触发耗时的 LLM 分析。
+    仅返回 status="completed" 的报告，进行中或失败的记录不参与缓存命中。
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     stmt = (
         select(AnalysisReport)
@@ -40,6 +54,10 @@ async def find_cached_report(
 
 
 async def get_or_create_repo(session: AsyncSession, owner: str, repo: str, url: str | None = None) -> Repository:
+    """查找或新建仓库记录，保证同一 owner/repo 只存在一行。
+
+    使用 flush 而非 commit，让调用方统一控制事务边界。
+    """
     stmt = select(Repository).where(Repository.owner == owner, Repository.repo == repo)
     result = await session.execute(stmt)
     db_repo = result.scalar_one_or_none()
@@ -56,6 +74,10 @@ async def create_report(
     filters_json: str | None = None,
     filters_hash: str | None = None,
 ) -> AnalysisReport:
+    """创建状态为 "running" 的报告占位行，分析完成后再由 complete_report 填充结果。
+
+    先写占位行的好处：即使分析过程中断，数据库里也有失败记录可供追溯。
+    """
     report = AnalysisReport(
         repo_id=repo_id,
         filters_json=filters_json,
@@ -75,6 +97,7 @@ async def complete_report(
     findings_data: list[dict],
     duration_ms: int,
 ) -> AnalysisReport:
+    """将分析结果写回报告行，同步批量插入 Finding 记录，并更新仓库的最后分析时间。"""
     stmt = select(AnalysisReport).where(AnalysisReport.id == report_id)
     result = await session.execute(stmt)
     report = result.scalar_one()
@@ -112,6 +135,7 @@ async def complete_report(
 
 
 async def fail_report(session: AsyncSession, report_id: int, error_message: str) -> None:
+    """将报告标记为 failed 并记录错误信息，供 UI 展示和后续重试判断。"""
     stmt = select(AnalysisReport).where(AnalysisReport.id == report_id)
     result = await session.execute(stmt)
     report = result.scalar_one()
@@ -121,6 +145,7 @@ async def fail_report(session: AsyncSession, report_id: int, error_message: str)
 
 
 async def get_report(session: AsyncSession, report_id: int) -> AnalysisReport | None:
+    """按 ID 查询单条报告，预加载 findings 和 repository，避免 N+1 懒加载问题。"""
     stmt = (
         select(AnalysisReport)
         .options(selectinload(AnalysisReport.findings), selectinload(AnalysisReport.repository))
@@ -137,6 +162,10 @@ async def list_reports(
     page: int = 1,
     limit: int = 20,
 ) -> tuple[list[AnalysisReport], int]:
+    """返回分页报告列表及总数，可选按 owner/repo 过滤。
+
+    total 与列表在同一事务内查询，保证分页数据一致性。
+    """
     stmt = (
         select(AnalysisReport)
         .options(selectinload(AnalysisReport.repository), selectinload(AnalysisReport.findings))
@@ -159,12 +188,14 @@ async def list_reports(
 
 
 async def list_repositories(session: AsyncSession) -> list[Repository]:
+    """返回所有仓库，按最近分析时间倒序排列，未分析过的仓库排在末尾（nullslast）。"""
     stmt = select(Repository).order_by(Repository.last_analyzed_at.desc().nullslast())
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
 async def get_dashboard_stats(session: AsyncSession) -> dict:
+    """聚合看板所需的概览统计：仓库数、报告数、按严重程度和维度的发现项分布，以及最近 5 条报告。"""
     repo_count = await session.execute(select(func.count(Repository.id)))
     report_count = await session.execute(select(func.count(AnalysisReport.id)))
 
@@ -279,7 +310,7 @@ async def get_dashboard_trends(
     ]
 
     # ── Repo comparison: total findings per repo (latest report each) ──
-    # Subquery: latest completed report per repo
+    # 子查询：每个仓库只取最新一条已完成报告，避免历史数据重复计入跨仓库对比
     latest_report_sub = (
         select(
             AnalysisReport.repo_id,
@@ -395,7 +426,11 @@ async def save_diagnosis(
     cost_usd: float | None,
     source: str = "manual",
 ) -> FailureDiagnosis:
-    """Upsert a diagnosis keyed on (repo_id, run_id, run_attempt, tier)."""
+    """Upsert a diagnosis keyed on (repo_id, run_id, run_attempt, tier).
+
+    用 upsert 语义而非 insert-or-ignore：若已存在则用最新结果覆盖（支持 deep 升级 default）。
+    所有参数均为 keyword-only，防止调用方因参数顺序错误写入错误字段。
+    """
     existing = await find_cached_diagnosis(session, repo_id, run_id, run_attempt, tier)
     if existing is not None:
         existing.category = category

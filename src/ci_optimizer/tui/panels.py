@@ -1,4 +1,12 @@
 """Write-confirmation panel and diff viewer."""
+# 架构角色：TUI 层的 Rich 渲染组件，专门负责"写入确认"这一交互环节。
+# 核心职责：
+#   1. 将 SSE write_proposal 数据结构化为 WriteAction / FileChange 数据类
+#   2. 用 Rich Panel 渲染变更摘要（红色边框警示用户即将落盘）
+#   3. 阻塞式等待用户输入 y/n/d/e，支持循环展示 diff 后再选择
+# 与其他模块的关系：
+#   - app.py 的 _handle_write_proposals() 构建 WriteAction 并调用 confirm_action()
+#   - 返回的 ConfirmChoice 枚举决定 app.py 是否以及以何种方式调用 /api/chat/apply
 
 from __future__ import annotations
 
@@ -11,6 +19,10 @@ from rich.syntax import Syntax
 
 
 class ConfirmChoice(Enum):
+    """用户在写入确认面板中的选择。
+    EDIT_ONLY 表示只写文件、跳过 git commit 和 PR，适合用户想手动控制提交的场景。
+    """
+
     YES = "y"
     NO = "n"
     DIFF = "d"
@@ -19,7 +31,7 @@ class ConfirmChoice(Enum):
 
 @dataclass
 class FileChange:
-    """A single file modification."""
+    """单个文件的变更描述，由 SSE write_proposal 事件的 proposals 列表中解析而来。"""
 
     path: str
     added: int = 0
@@ -29,7 +41,7 @@ class FileChange:
 
 @dataclass
 class WriteAction:
-    """An action that modifies the repo and needs confirmation."""
+    """需要用户二次确认的写入操作集合，可同时包含文件修改和 git commit。"""
 
     files: list[FileChange] = field(default_factory=list)
     commit_message: str | None = None
@@ -38,10 +50,8 @@ class WriteAction:
 
 
 async def confirm_action(action: WriteAction, console: Console | None = None) -> ConfirmChoice:
-    """Show a red-bordered confirmation panel for a write action.
-
-    Returns the user's choice. If the user picks 'd' (diff), the diff is
-    shown inline and the prompt re-appears.
+    """显示红色边框确认面板，阻塞等待用户输入并返回选择。
+    选择 'd' 时展示 unified diff 后重新提示，不退出循环——这是唯一的循环出口条件。
     """
     from prompt_toolkit import PromptSession
 

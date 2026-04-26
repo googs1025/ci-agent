@@ -1,4 +1,14 @@
 """Report formatter — converts analysis results to Markdown and JSON."""
+# 架构角色：分析结果的序列化层，将 AnalysisResult 转换为多种可消费格式。
+# 核心职责：
+#   1. format_summary_markdown()  — 为 Web UI 顶部摘要区生成精简 Markdown（不含 findings 明细）
+#   2. format_markdown()          — 为 CLI 导出生成含完整 findings 表格和代码片段的详细报告
+#   3. format_json()              — 生成机器可读的 JSON 结构，供 API 或后续处理使用
+#   4. I18N 字典                  — 支持 en / zh 两种输出语言，通过 language 参数在调用时选择
+# 与其他模块的关系：
+#   - orchestrator.AnalysisResult 是输入数据结构，包含 findings、executive_summary、stats 等字段
+#   - prefetch.AnalysisContext 提供仓库元数据（owner/repo、workflow 文件列表、过滤条件）
+#   - API 层和 CLI 命令各自调用对应的 format_* 函数，formatter 本身无副作用
 
 import json
 from datetime import datetime, timezone
@@ -73,12 +83,9 @@ def _get_i18n(language: str) -> dict:
 
 
 def format_summary_markdown(result: AnalysisResult, ctx: AnalysisContext, language: str = "en") -> str:
-    """Format a concise executive summary for web display.
-
-    Only includes the top-level metadata and the LLM's executive_summary text.
-    The per-dimension findings are intentionally omitted — the web UI renders
-    them as interactive cards below this summary, so duplicating them here
-    makes the summary section excessively long.
+    """为 Web UI 顶部摘要区生成精简 Markdown，只含元数据头部和 executive_summary 文本。
+    有意省略 per-dimension findings——Web UI 会将它们渲染为下方的可交互卡片，
+    在此处重复会导致摘要区过长。
     """
     t = _get_i18n(language)
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
@@ -107,7 +114,10 @@ def format_summary_markdown(result: AnalysisResult, ctx: AnalysisContext, langua
 
 
 def format_markdown(result: AnalysisResult, ctx: AnalysisContext, language: str = "en") -> str:
-    """Format analysis result as a full Markdown report (for CLI export)."""
+    """生成含完整 findings 表格和代码对比片段的详细 Markdown 报告，供 CLI 导出使用。
+    findings 先按 dimension 分组，每组先输出汇总表格，再输出带代码片段的详细描述。
+    表格单元格中的竖线字符需转义（\\|），防止破坏 Markdown 表格格式。
+    """
     t = _get_i18n(language)
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -213,7 +223,9 @@ def format_markdown(result: AnalysisResult, ctx: AnalysisContext, language: str 
 
 
 def format_json(result: AnalysisResult, ctx: AnalysisContext, language: str = "en") -> str:
-    """Format analysis result as JSON."""
+    """将分析结果序列化为 JSON 字符串，供 API 响应或机器消费使用。
+    若 ctx.usage_stats_json_path 存在，将其内容合并进输出（用于携带 token 用量统计）。
+    """
     repo_name = f"{ctx.owner}/{ctx.repo}" if ctx.owner else str(ctx.local_path)
 
     # Load usage stats if available

@@ -1,4 +1,11 @@
 """Pydantic request/response schemas for the API."""
+# ── 架构角色 ──────────────────────────────────────────────────────────────────
+# 本文件是 API 层的数据合约，所有请求体和响应体的 Pydantic 模型都在此定义。
+# 结构分为三组：
+#   - 分析相关（FilterSchema / AgentConfigSchema / AnalyzeRequest / Report* / Dashboard*）
+#   - Skill 管理（SkillSchema / SkillImportRequest / SkillImportResponse）
+#   - 失败诊断（DiagnoseRequest / DiagnoseResponse / SignatureClusterResponse / FailedRunSummary）
+# schemas 只做数据验证，不含业务逻辑；routes.py / diagnose.py 负责将其转换为内部对象。
 
 from datetime import datetime
 from typing import Literal
@@ -7,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class FilterSchema(BaseModel):
+    """分析过滤条件：时间范围、workflow 名、运行状态、分支，均为可选。"""
+
     since: datetime | None = None
     until: datetime | None = None
     workflows: list[str] | None = None
@@ -15,6 +24,10 @@ class FilterSchema(BaseModel):
 
 
 class AgentConfigSchema(BaseModel):
+    """Agent 配置的可选覆盖项，用于 POST /analyze 的 per-request 覆盖，以及 PUT /config 的全局更新。
+    所有字段均可选，None 表示"不覆盖，保留现有配置"。
+    """
+
     provider: str | None = None  # "anthropic" or "openai"
     model: str | None = None
     fallback_model: str | None = None
@@ -34,6 +47,8 @@ class AnalyzeRequest(BaseModel):
 
 
 class FindingSchema(BaseModel):
+    """单条分析发现的完整字段，用于 GET /reports/{id} 的响应体。"""
+
     id: int
     dimension: str
     skill_name: str | None = None  # which skill produced this finding
@@ -55,6 +70,7 @@ class FindingSchema(BaseModel):
         The LLM sometimes omits the line number or writes '' or 'null' in the
         JSON payload; older DB rows have these values. Coerce to None so the
         API does not fail with HTTP 500 when serving old reports.
+        LLM 偶尔在 JSON 中写出空字符串或字面量 'null'，这里做兼容处理，避免旧报告导致 500。
         """
         if v is None:
             return None
@@ -205,6 +221,8 @@ DiagnoseTier = Literal["default", "deep"]
 
 
 class DiagnoseRequest(BaseModel):
+    """POST /ci-runs/diagnose 的请求体。tier 控制使用轻量还是深度分析模型。"""
+
     repo: str  # "owner/name"
     run_id: int  # GitHub workflow_run.id
     run_attempt: int = 1
@@ -212,6 +230,8 @@ class DiagnoseRequest(BaseModel):
 
 
 class DiagnoseResponse(BaseModel):
+    """诊断结果响应体。cached=True 表示命中了精确缓存或签名缓存（未产生新 LLM 费用）。"""
+
     category: DiagnoseCategory
     confidence: DiagnoseConfidence
     root_cause: str

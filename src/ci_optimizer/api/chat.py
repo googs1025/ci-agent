@@ -1,4 +1,12 @@
 """Streaming chat endpoint for the CI Agent TUI and web frontend."""
+# ── 架构角色 ──────────────────────────────────────────────────────────────────
+# 本文件实现 CI Agent 的流式对话层，是整个 chat 功能的核心模块。
+# 关键设计：
+#   - 使用 Server-Sent Events（SSE）将 text / tool_use / tool_result / done 逐步推给前端
+#   - _run_agentic_loop 是多轮 tool-use 的状态机：每轮调用 LLM → 执行只读工具 → 继续，
+#     遇到写操作则生成 write_proposal 事件并暂停，等待 POST /chat/apply 确认后再执行
+#   - 同时支持 Anthropic（原生 tool_use）和 OpenAI（function calling）两种提供商
+# 与 tools.py（工具定义与执行）、auth.py（鉴权）、config.py（模型配置）协作。
 
 from __future__ import annotations
 
@@ -73,12 +81,17 @@ class ChatRequest(BaseModel):
 
 
 def _sse_event(event: str, data: dict) -> str:
-    """Format a single SSE event."""
+    """Format a single SSE event.
+    拼接标准 SSE 格式字符串；ensure_ascii=False 保证中文内容正常传输。
+    """
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _serialize_content(content) -> list[dict]:
-    """Serialize Anthropic content blocks to JSON-safe dicts for round-tripping."""
+    """Serialize Anthropic content blocks to JSON-safe dicts for round-tripping.
+    write_proposal 事件需要把整轮 assistant content 序列化后发给前端，
+    以便 /chat/apply 完成后前端可以还原上下文继续对话。
+    """
     result = []
     for block in content:
         if block.type == "text":
@@ -100,7 +113,13 @@ async def _run_agentic_loop(
     repo_root: Path | None,
     max_turns: int = 10,
 ):
-    """多轮 tool-use 循环。Yield SSE 事件字符串。"""
+    """多轮 tool-use 循环。Yield SSE 事件字符串。
+
+    每一轮：调用 LLM → 流出 text/tool_use 事件 → 若有只读工具则执行并继续；
+    若遇到写操作，生成 write_proposal 事件后立即 return（暂停生成器），
+    由前端用户确认后再调用 /chat/apply 触发实际写入。
+    repo_root 为 None 时禁用所有工具（纯问答模式）。
+    """
     tools = ANTHROPIC_TOOLS if repo_root else []
     total_input = 0
     total_output = 0
@@ -238,14 +257,14 @@ async def _run_agentic_loop(
 
 @chat_router.post("/chat")
 async def chat(request: ChatRequest):
-    """Streaming chat endpoint. Returns SSE (Server-Sent Events).
+    """流式对话入口，返回 SSE 流。根据 provider 配置分发到 Anthropic 或 OpenAI 后端。
 
-    Events:
-      - event: text         data: {"content": "..."}
-      - event: tool_use     data: {"id": "...", "name": "...", "input": {...}}
-      - event: tool_result  data: {"id": "...", "name": "...", "result_preview": "..."}
-      - event: done         data: {"usage": {...}, "model": "...", "turns": N}
-      - event: error        data: {"message": "..."}
+    SSE 事件类型：
+      - event: text         data: {"content": "..."}          — LLM 文本输出片段
+      - event: tool_use     data: {"id": "...", "name": "...", "input": {...}}  — 工具调用
+      - event: tool_result  data: {"id": "...", "name": "...", "result_preview": "..."}  — 工具结果预览
+      - event: done         data: {"usage": {...}, "model": "...", "turns": N}  — 完成（含 token 消耗）
+      - event: error        data: {"message": "..."}           — 异常
     """
 
     async def _generate():
@@ -302,7 +321,10 @@ class ApplyRequest(BaseModel):
 
 @chat_router.post("/chat/apply")
 async def apply_writes(request: ApplyRequest):
-    """执行用户确认的写入操作。返回每个操作的结果。"""
+    """执行用户确认的写入操作，返回每个操作的执行结果。
+    此端点是 write_proposal 事件的后续步骤：前端展示 diff 让用户确认后，
+    将 proposals 列表 POST 到这里，服务端执行实际的文件写入或 git commit。
+    """
     repo_root = Path(request.repo_root)
     if not repo_root.exists() or not repo_root.is_dir():
         return {"error": "repo_root not found"}
@@ -331,7 +353,9 @@ async def _query_anthropic(
     base_url: str | None,
     repo_root: Path | None = None,
 ):
-    """通过 Anthropic SDK 查询，支持 tool use 和代理。"""
+    """通过 Anthropic SDK 查询，支持 tool use 和代理。
+    base_url 会做后缀清理（去掉 /v1/messages 或 /v1），因为 SDK 自动拼接路径。
+    """
     import anthropic
 
     # 去掉 /v1/messages 或 /v1 — SDK 自动拼接
@@ -363,7 +387,9 @@ async def _query_openai(
     config: AgentConfig,
     repo_root: "Path | None" = None,
 ):
-    """通过 OpenAI SDK 查询，支持多轮 tool use（OpenAI function calling 格式）。"""
+    """通过 OpenAI SDK 查询，支持多轮 tool use（OpenAI function calling 格式）。
+    注意：OpenAI 路径目前不实现 write_proposal 拦截，写操作会直接执行。
+    """
     import json
 
     from openai import AsyncOpenAI

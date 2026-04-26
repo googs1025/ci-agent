@@ -1,6 +1,14 @@
 """CI 专用工具——用于 chat agent。
 
 每个工具在确认的仓库根目录内执行。路径经过验证，防止越界访问。
+
+架构说明：
+  本文件是 chat agent 的"工具箱"，为 LLM 提供可调用的操作集合。
+  TOOL_DEFINITIONS / ANTHROPIC_TOOLS 是工具的 schema 声明（供 LLM 理解参数），
+  execute_tool 是运行时分发器，preview_write 负责写操作的只读预览（生成 diff 但不落盘），
+  validate_path 和 _is_command_safe 是两道安全闸门：防路径遍历 + 防危险命令。
+  写操作（write_file / edit_file / git_commit）被单独列在 WRITE_TOOL_NAMES，
+  chat.py 的 _run_agentic_loop 会拦截这些工具并通过 write_proposal 事件让用户确认。
 """
 
 from __future__ import annotations
@@ -357,6 +365,7 @@ def _exec_read_file(inputs: dict, repo_root: Path) -> str:
         return f"Error: not a file: {inputs['path']}"
     content = path.read_text(errors="replace")
     max_chars = 50_000
+    # 截断超长文件，避免单次工具调用撑满 context window
     if len(content) > max_chars:
         content = content[:max_chars] + f"\n\n... (已截断，共 {len(content)} 字符)"
     return content
@@ -456,6 +465,7 @@ def _exec_edit_file(inputs: dict, repo_root: Path) -> str:
     if old_string not in old_content:
         return f"Error: old_string not found in {inputs['path']}"
     count = old_content.count(old_string)
+    # 仅替换第一个匹配项（与 preview_edit_file 行为一致），避免意外替换重复片段
     new_content = old_content.replace(old_string, new_string, 1)
     path.write_text(new_content)
     return f"Edited {inputs['path']} (replaced 1 of {count} occurrences)"

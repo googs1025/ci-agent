@@ -1,4 +1,13 @@
-"""Orchestrator — routes analysis to the configured engine (Anthropic or OpenAI)."""
+"""Orchestrator — routes analysis to the configured engine (Anthropic or OpenAI).
+
+架构角色：agents 层的入口调度器，负责将分析请求路由到正确的引擎（Anthropic 或 OpenAI）。
+核心职责：
+  1. 从 SkillRegistry 获取当前激活的技能列表
+  2. 根据 AgentConfig.provider 分发到 anthropic_engine 或 openai_engine
+  3. 定义通用数据结构 AnalysisResult，以及 JSON 解析工具函数
+与其他模块的关系：被上层 API 路由（FastAPI handler）调用；引擎层（anthropic/openai_engine）
+  反向导入 AnalysisResult 和 _parse_result 以填充并返回统一的结果对象。
+"""
 
 import json
 from dataclasses import dataclass, field
@@ -10,7 +19,11 @@ from ci_optimizer.prefetch import AnalysisContext
 
 @dataclass
 class AnalysisResult:
-    """Structured result from analysis."""
+    """跨引擎统一的分析结果结构。
+
+    由 anthropic_engine 或 openai_engine 填充并返回给上层调用者。
+    findings 是所有 specialist 产出的扁平化 finding 列表，每条已注入 dimension 字段。
+    """
 
     executive_summary: str = ""
     findings: list[dict] = field(default_factory=list)
@@ -21,7 +34,11 @@ class AnalysisResult:
 
 
 def _try_parse_json(raw_text: str) -> dict | None:
-    """Try multiple strategies to extract JSON from raw text."""
+    """尝试多种策略从 LLM 原始输出中提取 JSON 对象。
+
+    LLM 输出格式不稳定（裸 JSON / Markdown 代码块 / 混合文本），
+    此函数按优先级依次尝试三种解析方式，降低因格式差异导致的解析失败率。
+    """
     # Strategy 1: entire text is JSON
     try:
         return json.loads(raw_text.strip())
@@ -54,11 +71,14 @@ def _parse_result(
     raw_text: str,
     dimension_to_skill: dict[str, str] | None = None,
 ) -> tuple[str, list[dict], dict]:
-    """Parse the orchestrator's output into structured data.
+    """将 orchestrator 的原始输出解析为结构化数据三元组 (summary, findings, stats)。
 
     dimension_to_skill: optional mapping from dimension name to skill name,
     used to tag each finding with the skill that produced it. Callers can
     build this from the active skills list.
+
+    解析失败时优雅降级：返回 (raw_text, [], {"total_findings": 0})，
+    不抛出异常，确保 API 层始终得到可用响应。
     """
     dim_map = dimension_to_skill or {}
     try:
@@ -101,13 +121,15 @@ async def run_analysis(
     config: AgentConfig | None = None,
     selected_skills: list[str] | None = None,
 ) -> AnalysisResult:
-    """Run analysis using the configured provider engine.
+    """执行 CI 分析的顶层入口，按配置的 provider 路由到对应引擎。
 
     Routes to:
       - Anthropic engine (Claude Agent SDK) when provider="anthropic"
       - OpenAI engine (OpenAI SDK) when provider="openai"
 
     selected_skills: list of dimension names to run, or None for all.
+
+    此函数是 Langfuse 追踪的根 span，所有子引擎的调用都将挂载在该 trace 下。
     """
     if config is None:
         config = AgentConfig.load()

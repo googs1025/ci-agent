@@ -1,4 +1,13 @@
 """FastAPI route handlers."""
+# ── 架构角色 ──────────────────────────────────────────────────────────────────
+# 本文件是 CI 分析功能的主路由层，统一挂载在 /api 前缀下并要求 API Key 鉴权。
+# 核心职责：
+#   - POST /analyze：接收仓库地址，异步在后台跑分析任务，立即返回 report_id
+#   - GET /reports / /reports/{id}：查询分析报告和明细
+#   - GET/PUT /config：读写运行时 Agent 配置（支持热更新）
+#   - GET/POST/DELETE /skills：管理内置与用户自定义分析 skill
+#   - GET /repositories / /dashboard / /dashboard/trends：统计与趋势视图
+# 与 orchestrator（跑分析）、skill_registry（管理 skill）、db/crud（持久化）深度耦合。
 
 import json
 import os
@@ -46,11 +55,13 @@ router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 async def get_db():
+    """FastAPI 依赖注入：提供异步数据库 session，请求结束后自动关闭。"""
     async with async_session() as session:
         yield session
 
 
 def _to_analysis_filters(schema) -> AnalysisFilters | None:
+    """将 FilterSchema（API 请求体）转换为内部 AnalysisFilters，处理 since/until 对的组合逻辑。"""
     if schema is None:
         return None
     time_range = None
@@ -84,7 +95,9 @@ async def _run_analysis_task(
     config: AgentConfig | None = None,
     selected_skills: list[str] | None = None,
 ):
-    """Background task to run the analysis."""
+    """后台分析任务：在独立协程中完整执行"预取→分析→格式化→入库"流水线。
+    成功时将报告写入 DB，失败时记录错误状态。finally 块负责清理临时文件和克隆目录。
+    """
     import logging
     import shutil
 
@@ -149,7 +162,10 @@ async def analyze(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    """Trigger a new CI pipeline analysis."""
+    """触发一次新的 CI 流水线分析。
+    先做缓存查找（同仓库+同过滤条件的近期报告），命中则直接返回；
+    未命中则创建 running 状态的报告记录，将实际分析推入后台任务，立即返回 report_id。
+    """
     # Extract owner/repo without cloning (clone deferred to background task)
     from ci_optimizer.resolver import GITHUB_SHORTHAND_PATTERN, is_github_shorthand, is_github_url, parse_github_url
 
@@ -161,6 +177,7 @@ async def analyze(
         owner, repo_name = match.group(1), match.group(2)
     else:
         # Local path — validate exists and is safe
+        # 本地路径：校验目录存在且含 .github/workflows/，防止路径遍历攻击
         from pathlib import Path
 
         p = Path(repo_input).resolve()
@@ -331,7 +348,9 @@ _FIELD_TO_ENV = {
 
 @router.put("/config")
 async def update_config(updates: AgentConfigSchema):
-    """Update agent configuration. Writes to config.json AND sets env vars in-process."""
+    """更新 Agent 配置：同时写入 config.json 并更新进程内环境变量，使变更立即生效，
+    避免下次 AgentConfig.load() 从 env 读取到旧值而覆盖刚写入的配置。
+    """
     config = AgentConfig.load()
     for field in ("provider", "model", "fallback_model", "anthropic_api_key", "openai_api_key", "github_token", "base_url", "language"):
         val = getattr(updates, field, None)
@@ -389,10 +408,8 @@ async def reload_skills():
 
 @router.post("/skills/import", response_model=SkillImportResponse)
 async def import_skill(req: SkillImportRequest):
-    """Import a skill from Claude Code, OpenCode, a local path, or a GitHub repo.
-
-    After a successful import the in-memory skill registry is reloaded so the
-    new skill is immediately available for subsequent analyses.
+    """从多种来源导入自定义 skill（Claude Code / OpenCode / 本地路径 / GitHub 仓库）。
+    导入成功后立即重载内存中的 skill 注册表单例，让新 skill 对后续分析请求即时可用。
     """
     from pathlib import Path as _P
 

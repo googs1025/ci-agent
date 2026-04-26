@@ -1,4 +1,13 @@
-"""OpenAI-compatible engine — runs analysis via OpenAI chat completions API."""
+"""OpenAI-compatible engine — runs analysis via OpenAI chat completions API.
+
+架构角色：OpenAI 路径的执行引擎，通过两阶段策略（并行专家调用 → 综合 synthesis）实现多维分析。
+核心职责：
+  1. 将每个 specialist 所需的数据内容直接内联到 prompt 中（因 OpenAI 模型无文件系统访问能力）
+  2. 并行异步调用所有 specialist，每个 specialist 独立分析自己关注的数据维度
+  3. 将所有 specialist 输出拼接后交给综合 call 生成最终 JSON 报告；综合失败时降级为 fallback combine
+与其他模块的关系：由 orchestrator.run_analysis() 在 provider="openai" 时调用；
+  也支持 OpenAI-compatible 第三方端点（通过 base_url 配置）。
+"""
 
 import asyncio
 import json
@@ -19,7 +28,12 @@ if TYPE_CHECKING:
 
 
 def _build_context_for_skill(ctx: AnalysisContext, requires: list[str]) -> str:
-    """Build context text for a single skill based on its requires_data."""
+    """为单个 specialist 构建上下文文本，只内联该 specialist 声明需要的数据。
+
+    按需内联而非全量注入，避免超出模型上下文窗口；
+    大文件（jobs > 30KB, logs > 20KB）会被截断并附加提示。
+    Build context text for a single skill based on its requires_data.
+    """
     parts = []
     if ctx.owner:
         parts.append(f"Repository: {ctx.owner}/{ctx.repo}")
@@ -77,7 +91,12 @@ async def _call_specialist(
     context_text: str,
     language: str,
 ) -> str:
-    """Call a single specialist and return its response via streaming."""
+    """调用单个 specialist 并通过流式模式返回其完整响应。
+
+    Call a single specialist and return its response via streaming.
+    # Use streaming to work around proxies that return content:null in non-stream mode
+    使用流式请求是为了绕过某些代理在非流式模式下返回 content:null 的兼容性问题。
+    """
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["en"])
 
     # Use streaming to work around proxies that return content:null in non-stream mode
@@ -101,7 +120,11 @@ async def _call_specialist(
 
 
 async def run_analysis_openai(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":  # noqa: E501
-    """Run analysis using OpenAI-compatible API with parallel specialist calls."""
+    """使用 OpenAI-compatible API 执行两阶段多专家分析。
+
+    Run analysis using OpenAI-compatible API with parallel specialist calls.
+    当 Langfuse tracing 启用时，替换 AsyncOpenAI client 为 langfuse 的 drop-in 版本以自动追踪 LLM 调用。
+    """
     start_time = time.time()
 
     # Use Langfuse drop-in when tracing is enabled
@@ -208,6 +231,7 @@ async def _run_analysis_with_client(
     logger.info(f"Parsed: {len(findings)} findings, stats={stats}")
 
     if not findings:
+        # 综合步骤未能产出 findings（例如模型输出格式错误），降级为直接拼接各 specialist 原始结果
         # If synthesis didn't produce findings, try fallback combine
         logger.warning("No findings from synthesis, trying fallback combine from specialist results")
         fallback = _fallback_combine(specialist_results)
@@ -231,7 +255,11 @@ async def _run_analysis_with_client(
 
 
 def _fallback_combine(specialist_results: dict[str, str]) -> str:
-    """Combine specialist results without orchestrator synthesis."""
+    """在综合 LLM 调用失败时，直接从各 specialist 原始输出中提取 findings 并拼装成合法的结果 JSON。
+
+    Combine specialist results without orchestrator synthesis.
+    此函数是最后的安全网，确保即使综合步骤彻底失败，API 层仍能返回有用的 findings 而非空结果。
+    """
     all_findings = []
     for dim_name, report_text in specialist_results.items():
         try:

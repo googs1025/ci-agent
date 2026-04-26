@@ -1,4 +1,10 @@
 """CLI entry point for ci-agent."""
+# 架构角色：用户交互的最外层入口，所有子命令（analyze/serve/config/skills/chat）
+#           均在此文件中注册和分发，是系统各功能模块的"粘合层"。
+# 核心职责：解析命令行参数、合并配置、将执行流路由到对应的运行函数
+#           （run_analyze / run_serve / run_config / run_skills / run_chat）。
+# 关联模块：依赖 config.py 构建 AgentConfig，依赖 resolver/prefetch/filters
+#           完成数据准备，最终将 ctx 交给 agents/orchestrator 执行分析。
 
 import argparse
 import asyncio
@@ -135,7 +141,11 @@ def parse_args():
 
 
 def _build_config(args) -> "AgentConfig":
-    """Build AgentConfig from saved config + CLI overrides."""
+    """Build AgentConfig from saved config + CLI overrides.
+
+    先从文件/环境变量加载基础配置，再用 CLI 标志做最终覆盖，
+    确保命令行参数拥有最高优先级（高于环境变量）。
+    """
     from ci_optimizer.config import AgentConfig
 
     config = AgentConfig.load()
@@ -156,6 +166,7 @@ def _build_config(args) -> "AgentConfig":
 
 
 async def run_analyze(args):
+    """执行单次 CI 分析的完整流程：配置构建 → 仓库解析 → 数据预取 → Agent 分析 → 报告输出。"""
     from ci_optimizer.agents.orchestrator import run_analysis
     from ci_optimizer.filters import AnalysisFilters
     from ci_optimizer.prefetch import prepare_context
@@ -297,7 +308,11 @@ def run_config(args):
 
 
 def _validate_skill_path(path: Path) -> int:
-    """Validate one or more SKILL.md files. Returns 0 on success, 1 on failure."""
+    """Validate one or more SKILL.md files. Returns 0 on success, 1 on failure.
+
+    支持三种输入形式：单个 SKILL.md 文件、包含 SKILL.md 的技能目录、
+    或内含多个子技能目录的父目录。对 requires_data 字段错误还会给出"你是否想写 X？"的提示。
+    """
     from ci_optimizer.agents.skill_registry import (
         VALID_REQUIRES_DATA,
         SkillRegistry,
@@ -327,6 +342,7 @@ def _validate_skill_path(path: Path) -> int:
         return 1
 
     # "did you mean" for unknown requires_data values
+    # 用字符共现度做轻量相似度匹配，不引入 difflib 依赖
     def _suggest(bad: str) -> str | None:
         best: tuple[int, str] | None = None
         for candidate in VALID_REQUIRES_DATA:
@@ -545,6 +561,11 @@ def run_skills(args):
 
 
 def run_chat(args):
+    """启动 TUI 交互模式。
+
+    通过设置环境变量来传递 model override，而非直接修改 config 对象，
+    这样 run_tui() 内部再次调用 AgentConfig.load() 时能自动感知。
+    """
     from pathlib import Path
 
     from ci_optimizer.tui.app import run_tui

@@ -1,4 +1,10 @@
 """Pre-fetch GitHub data before agent analysis."""
+# 架构角色：数据准备层，负责在 Agent 分析开始前将所有所需数据从 GitHub API
+#           拉取到本地临时文件，让 Agent 可以直接读文件而无需实时调用网络。
+# 核心职责：按需（required_data 集合）获取 workflow 文件、runs、jobs、logs、
+#           action SHA、usage_stats，并计算聚合统计指标写入临时 JSON 文件。
+# 关联模块：由 cli.py 和 api/ 层调用；依赖 github_client.py 访问 GitHub API；
+#           产出的 AnalysisContext 对象传给 agents/orchestrator 作为分析输入。
 
 import asyncio
 import json
@@ -33,7 +39,11 @@ RUNNER_MULTIPLIERS = {
 
 @dataclass
 class AnalysisContext:
-    """All data needed for agent analysis, pre-fetched and saved locally."""
+    """All data needed for agent analysis, pre-fetched and saved locally.
+
+    各 *_json_path 字段指向临时文件，Agent 通过读文件获取数据，
+    避免在 LLM 上下文中携带大量原始 JSON。字段为 None 表示该数据未被请求或不可用。
+    """
 
     local_path: Path
     owner: str | None = None
@@ -63,7 +73,10 @@ _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _extract_action_refs(workflow_files: list[Path]) -> dict[str, tuple[str, str, str]]:
-    """Return {action_ref: (owner, repo, ref)} for all non-SHA action pins found in workflows."""
+    """Return {action_ref: (owner, repo, ref)} for all non-SHA action pins found in workflows.
+
+    只提取尚未固定到完整 SHA 的 action 引用，以便后续安全检查或自动 pin 建议。
+    """
     refs: dict[str, tuple[str, str, str]] = {}
     for wf in workflow_files:
         try:
@@ -87,7 +100,11 @@ async def _resolve_action_shas(
     refs: dict[str, tuple[str, str, str]],
     client: GitHubClient,
 ) -> dict[str, str]:
-    """Resolve each action ref to a full commit SHA. Returns {action@ref: sha}."""
+    """Resolve each action ref to a full commit SHA. Returns {action@ref: sha}.
+
+    并发解析，但通过 Semaphore(5) 限制并发数，防止触发 GitHub 二级速率限制。
+    gather 的 return_exceptions=True 确保单个失败不阻断其他解析。
+    """
     results: dict[str, str] = {}
 
     async def resolve_one(key: str, owner: str, repo: str, ref: str) -> None:
@@ -143,7 +160,11 @@ def _detect_runner_os(labels: list[str] | None) -> str:
 
 
 def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> dict:
-    """Compute usage statistics from runs and their jobs."""
+    """Compute usage statistics from runs and their jobs.
+
+    预先聚合出 per-workflow / per-job 的成功率、平均耗时、队列等待时间，
+    以及基于 GitHub 官方倍率的账单分钟数估算，避免 Agent 在 LLM 上下文中做大量计算。
+    """
     stats: dict = {
         "total_runs": len(runs),
         "total_jobs": 0,
@@ -227,6 +248,7 @@ def _compute_usage_stats(runs: list[dict], all_jobs: dict[str, list[dict]]) -> d
                 job_name_stats[job_name]["durations_ms"].append(exec_dur)
 
                 # Billing estimate: round up to nearest minute × multiplier
+                # GitHub 按整分钟向上取整计费；macOS × 10、Windows × 2 是官方倍率
                 minutes = exec_dur / 60000
                 billed = math.ceil(minutes)
                 multiplier = RUNNER_MULTIPLIERS.get(runner_os, 1)
@@ -307,6 +329,10 @@ async def prepare_context(
 
     required_data: set of data types to fetch. None = fetch all (backward compatible).
     Valid values: {"workflows", "runs", "jobs", "logs", "usage_stats"}
+
+    按需拉取数据的入口函数。required_data=None 时保持向后兼容（全量拉取）；
+    传入具体集合时只拉取必要数据，减少 API 调用次数和延迟。
+    usage_stats 隐式依赖 runs+jobs，函数内部会自动推导依赖关系。
     """
     ctx = AnalysisContext(
         local_path=resolved.local_path,
@@ -336,6 +362,8 @@ async def prepare_context(
 
     # Compute which data types are needed
     # Implicit dependency: usage_stats requires runs + jobs to compute
+    # 通过布尔推导将 required_data 集合展开成各类型的独立 need_* 标志，
+    # 便于后续条件分支判断，也使依赖关系显式可见
     need_all = required_data is None
     need_usage = need_all or "usage_stats" in required_data
     need_runs = need_all or "runs" in required_data or "jobs" in required_data or need_usage
@@ -366,6 +394,7 @@ async def prepare_context(
                         logger.warning(f"Failed to fetch jobs for run {run_id}: {e}")
                         continue
                     # Brief pause every 10 requests to stay under secondary rate limits
+                    # GitHub 对每分钟并发 API 请求有二级限制，每 10 次请求暂停 1 秒做流控
                     if (i + 1) % 10 == 0:
                         await asyncio.sleep(1)
                     all_jobs[str(run_id)] = [

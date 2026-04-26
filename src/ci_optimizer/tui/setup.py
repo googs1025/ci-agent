@@ -1,4 +1,13 @@
 """First-run setup wizard and config review for TUI."""
+# 架构角色：TUI 启动前的配置生命周期管理模块。
+# 核心职责：
+#   1. needs_setup()：判断是否首次运行（config.json 不存在）
+#   2. run_setup_wizard()：引导用户完成 provider / API Key / GitHub Token / model / language 五步配置
+#   3. run_config_review()：非首次启动时展示现有配置，允许用户逐项修改
+#   4. verify_api()：用最小请求（max_tokens=16）验证 API Key 连通性，提前暴露配置错误
+# 与其他模块的关系：
+#   - app.py 在 banner 之后、仓库检测之前调用本模块，确保配置就绪再进入 REPL
+#   - AgentConfig（来自 config 模块）是配置的持久化载体，setup.py 负责填充并 save()
 
 from __future__ import annotations
 
@@ -13,12 +22,12 @@ from ci_optimizer.config import CONFIG_FILE, DEFAULT_MODEL, AgentConfig
 
 
 def needs_setup() -> bool:
-    """Return True if config.json does not exist (first run)."""
+    """判断是否需要运行 setup wizard（config.json 尚不存在即视为首次运行）。"""
     return not CONFIG_FILE.exists()
 
 
 def mask_key(value: str | None) -> str:
-    """Mask a sensitive value for display."""
+    """对 API Key 等敏感值做脱敏显示（保留头 8 位和尾 4 位，中间替换为 ...）。"""
     if not value:
         return "(未设置)"
     if len(value) > 12:
@@ -33,9 +42,8 @@ async def verify_api(
     base_url: str | None = None,
     anthropic_base_url: str | None = None,
 ) -> tuple[bool, str]:
-    """Send a lightweight API call to verify connectivity.
-
-    Returns (success: bool, message: str).
+    """发送一次极小请求（max_tokens=16, content="hi"）验证 API 连通性，返回 (成功, 描述消息)。
+    分别处理网络错误、超时、HTTP 401/403，给出明确的中文提示而非原始异常堆栈。
     """
     try:
         if provider == "openai":
@@ -101,7 +109,9 @@ async def _verify_openai(api_key: str, model: str, base_url: str | None) -> tupl
 
 
 async def run_setup_wizard(console: Console) -> AgentConfig:
-    """Run the full first-time setup wizard. Returns configured AgentConfig."""
+    """首次运行时的完整配置向导，按顺序引导用户完成 5 步配置后保存并验证 API。
+    配置完成后调用 _run_verify() 立即验证连通性，提前发现 Key 错误。
+    """
     console.print(
         Panel(
             "[bold]首次使用，需要进行初始配置[/bold]",
@@ -171,7 +181,9 @@ async def run_setup_wizard(console: Console) -> AgentConfig:
 
 
 async def run_config_review(console: Console, config: AgentConfig) -> AgentConfig:
-    """Show current config and let user modify each item. Returns updated config."""
+    """非首次启动时展示当前配置，逐项询问是否修改，有变更则自动保存，最后验证 API。
+    即使用户全部选 N 跳过，也会执行一次 API 验证，确保每次启动都能及时发现 Key 过期。
+    """
     session = PromptSession()
     changed = False
 
@@ -255,7 +267,9 @@ async def run_config_review(console: Console, config: AgentConfig) -> AgentConfi
 
 
 async def _run_verify(console: Console, config: AgentConfig) -> None:
-    """Run API verification and print result."""
+    """调用 verify_api() 并将结果以绿色（成功）或红色（失败）打印到 console。
+    API Key 为空时跳过验证，避免向 None 发起无意义的网络请求。
+    """
     api_key = config.get_api_key()
     if not api_key:
         console.print("[yellow]⚠ 未设置 API Key，跳过连通性验证[/yellow]")

@@ -1,4 +1,12 @@
-"""Shared prompt text and language instructions for all agent engines."""
+"""Shared prompt text and language instructions for all agent engines.
+
+架构角色：所有引擎共享的 prompt 常量仓库，集中维护多语言指令和输出格式规范。
+核心职责：
+  1. LANGUAGE_INSTRUCTIONS：为每种语言提供统一的语言要求注入片段，追加到各 specialist/orchestrator prompt 末尾
+  2. FINDING_JSON_FORMAT：定义 specialist 输出的 JSON schema，自动追加到缺少 "## Output Format" 的 SKILL.md
+与其他模块的关系：被 anthropic_engine、openai_engine、skill_registry 导入；
+  修改此文件会影响所有 specialist 的输出格式，需与 orchestrator 的解析逻辑保持一致。
+"""
 
 LANGUAGE_INSTRUCTIONS = {
     "zh": (
