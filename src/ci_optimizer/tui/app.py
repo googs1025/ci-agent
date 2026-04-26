@@ -323,12 +323,12 @@ async def _query_via_server(
 
 async def run_tui(repo_path: Path | None = None) -> None:
     """TUI 主入口，完整生命周期：
-      1. 打印 banner
-      2. 首次运行 → setup wizard；否则 → config review（可跳过逐项修改）
-      3. 检测并确认 Git 仓库（支持手动切换路径）
-      4. 确保后端 Server 就绪（自动拉起或复用已有进程）
-      5. 进入 REPL：读输入 → 分发斜杠命令 / 发送 /api/chat → 渲染响应
-      6. 退出时清理自动拉起的 Server 子进程
+    1. 打印 banner
+    2. 首次运行 → setup wizard；否则 → config review（可跳过逐项修改）
+    3. 检测并确认 Git 仓库（支持手动切换路径）
+    4. 确保后端 Server 就绪（自动拉起或复用已有进程）
+    5. 进入 REPL：读输入 → 分发斜杠命令 / 发送 /api/chat → 渲染响应
+    6. 退出时清理自动拉起的 Server 子进程
     """
     console = Console()
     renderer = StreamRenderer(console=console)
