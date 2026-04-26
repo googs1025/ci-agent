@@ -169,7 +169,12 @@ async def _run_agentic_loop(
                     name=f"turn-{turn}",
                     model=model,
                     output=turn_text or None,
-                    usage={"input": response.usage.input_tokens, "output": response.usage.output_tokens},
+                    usage={
+                        "input": response.usage.input_tokens,
+                        "output": response.usage.output_tokens,
+                        "total": response.usage.input_tokens + response.usage.output_tokens,
+                        "unit": "TOKENS",
+                    },
                 )
             except Exception:
                 pass
@@ -463,7 +468,12 @@ async def _query_openai(
                     trace.generation(
                         name=f"turn-{turn}",
                         model=model,
-                        usage={"input": response.usage.prompt_tokens, "output": response.usage.completion_tokens},
+                        usage={
+                            "input": response.usage.prompt_tokens,
+                            "output": response.usage.completion_tokens,
+                            "total": response.usage.total_tokens,
+                            "unit": "TOKENS",
+                        },
                     )
                 except Exception:
                     pass
