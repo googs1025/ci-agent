@@ -1,5 +1,13 @@
 """Langfuse tracing integration.
 
+架构角色：可观测性基础设施层，为整个 agents 层提供统一的 LLM 调用追踪能力。
+核心职责：
+  1. 懒初始化 Langfuse 客户端（首次调用时检查环境变量，避免导入时副作用）
+  2. 提供 langfuse_observe 装饰器，同时支持 async 和 sync 函数，未配置时退化为 no-op
+  3. 提供 flush() 保证异步任务结束时追踪数据不丢失
+与其他模块的关系：orchestrator、anthropic_engine、openai_engine、failure_triage 均导入此模块；
+  OpenAI engine 在 tracing 启用时会替换 client 为 langfuse 的 drop-in 版本以自动追踪 API 调用。
+
 Provides a thin wrapper around Langfuse SDK. When LANGFUSE_SECRET_KEY
 is not configured, all tracing is silently disabled — zero impact on
 existing behavior.
@@ -24,7 +32,11 @@ _langfuse_enabled: bool | None = None  # None = not yet checked
 
 
 def _ensure_init():
-    """Lazy-initialize Langfuse on first use (after load_dotenv has run)."""
+    """延迟初始化 Langfuse，确保在 load_dotenv 加载环境变量之后才读取配置。
+
+    Lazy-initialize Langfuse on first use (after load_dotenv has run).
+    使用 _langfuse_enabled=None 作为"尚未检查"的哨兵值，区别于已检查但禁用的 False。
+    """
     global _langfuse_instance, _langfuse_enabled
 
     if _langfuse_enabled is not None:
@@ -75,9 +87,13 @@ def flush():
 
 
 def langfuse_observe(name: str | None = None, **kwargs: Any) -> Callable:
-    """Decorator that wraps langfuse @observe() when enabled, otherwise a no-op.
+    """将函数包装为 Langfuse trace span 的装饰器；未配置 Langfuse 时退化为透明包装。
 
+    Decorator that wraps langfuse @observe() when enabled, otherwise a no-op.
     Uses lazy check so the decorator resolves at call time, not import time.
+
+    分别为 async 和 sync 函数提供对应的 wrapper，通过 inspect.iscoroutinefunction 在装饰时区分。
+    Langfuse observe 调用失败时静默回退到原始函数，避免追踪逻辑影响业务可用性。
     """
 
     def decorator(func: Callable) -> Callable:

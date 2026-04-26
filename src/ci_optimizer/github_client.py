@@ -1,4 +1,11 @@
-"""GitHub REST API client for fetching CI run data."""
+"""GitHub REST API client for fetching CI run data.
+
+架构角色：外部数据源适配层，将 GitHub Actions REST API 封装为可复用的异步客户端。
+核心职责：获取 workflow runs、jobs、日志（整包 zip 和单 job 纯文本两种形式），
+以及仓库元数据、workflow 列表、运行时间和 Action ref 解析。
+与其他模块的关系：被 AI 技能（skill_runner）和 Webhook 处理器调用以拉取原始 CI 数据；
+AnalysisFilters 在此处被转换为 GitHub API 参数或客户端侧过滤条件。
+"""
 
 import asyncio
 import io
@@ -14,6 +21,8 @@ GITHUB_API_BASE = "https://api.github.com"
 
 
 class GitHubClient:
+    """封装 GitHub Actions REST API 的异步客户端，支持 Token 认证和限流自动重试。"""
+
     def __init__(self, token: str | None = None, config: "AgentConfig | None" = None):
         if config and config.github_token:
             self.token = config.github_token
@@ -22,6 +31,7 @@ class GitHubClient:
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
+        """懒加载 HTTP 客户端，同一实例复用连接池以减少握手开销。"""
         if self._client is None:
             headers = {"Accept": "application/vnd.github+json"}
             if self.token:
@@ -39,6 +49,11 @@ class GitHubClient:
             self._client = None
 
     async def _request(self, method: str, path: str, **kwargs) -> dict | list:
+        """统一请求入口，内置限流重试逻辑。
+
+        GitHub 有两类限速：主限速（X-RateLimit-Reset 头）和次级限速（Retry-After 头）。
+        等待时间上限为 120 秒，避免因极端情况导致无限挂起。
+        """
         client = await self._get_client()
         response = await client.request(method, path, **kwargs)
 
@@ -74,7 +89,10 @@ class GitHubClient:
         filters: AnalysisFilters | None = None,
         per_page: int = 30,
     ) -> list[dict]:
-        """Fetch recent workflow runs with optional filters."""
+        """Fetch recent workflow runs with optional filters.
+
+        GitHub API 只支持单值的 branch/status 过滤；多值情况改为客户端本地过滤。
+        """
         params: dict = {"per_page": per_page}
 
         if filters:
@@ -116,7 +134,11 @@ class GitHubClient:
         return data.get("jobs", [])
 
     async def get_run_logs(self, owner: str, repo: str, run_id: int, max_lines: int = 2000) -> str | None:
-        """Download and extract failure logs for a run. Returns truncated log text."""
+        """Download and extract failure logs for a run. Returns truncated log text.
+
+        GitHub 返回的是包含多个 job 日志文件的 ZIP；此处合并所有文件并取尾部行，
+        因为错误通常出现在运行末尾。BadZipFile 时降级为纯文本处理。
+        """
         client = await self._get_client()
         try:
             response = await client.get(
@@ -199,6 +221,9 @@ class GitHubClient:
         """Resolve a tag/branch ref to its full commit SHA.
 
         Tries tag ref first, then branch, returns None if not found.
+
+        先尝试 tag，再尝试 branch，顺序与 GitHub 官方推荐一致。
+        注解标签（annotated tag）需要额外一次请求跟随到真正的 commit SHA。
         """
         for ref_path in [f"tags/{ref}", f"heads/{ref}"]:
             try:

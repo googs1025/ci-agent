@@ -1,5 +1,13 @@
 """Skill importer — convert external SKILL.md files into ci-agent format.
 
+架构角色：外部技能的适配导入层，负责将来自不同系统的 SKILL.md 格式转换为 ci-agent 兼容格式。
+核心职责：
+  1. 从 Claude Code、OpenCode、本地路径或 GitHub 仓库导入技能定义
+  2. 规范化字段差异（如 allowed-tools → tools、补充 dimension 和 requires_data）
+  3. 写入 ~/.ci-agent/skills/<name>/ 并通过 SkillRegistry 进行校验
+与其他模块的关系：供 CLI 命令（`ci-agent skill import`）调用，导入后的技能由 SkillRegistry 加载；
+  ci-agent 的 SKILL.md schema 是 Claude Code/OpenCode schema 的超集（多了 dimension、requires_data）。
+
 Supports importing from:
   - Claude Code (~/.claude/skills/<name>/SKILL.md)
   - OpenCode (~/.config/opencode/skills/<name>/SKILL.md)
@@ -40,11 +48,16 @@ OPENCODE_SKILLS_DIR = Path.home() / ".config" / "opencode" / "skills"
 
 
 class SkillImportError(Exception):
-    """Raised when a skill cannot be imported."""
+    """技能导入失败时抛出，涵盖格式错误、字段缺失、校验失败等不可恢复情形。
+
+    Raised when a skill cannot be imported.
+    """
 
 
 @dataclass
 class ImportResult:
+    """导入操作的结果，包含目标路径、来源信息和非致命警告列表。"""
+
     name: str
     target_path: Path
     dimension: str
@@ -68,7 +81,10 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
 
 
 def _normalize_name(raw: str) -> str:
-    """Convert a skill name to a filesystem-safe directory name."""
+    """将技能名规范化为文件系统安全的目录名（小写、连字符分隔）。
+
+    Convert a skill name to a filesystem-safe directory name.
+    """
     safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", raw.strip().lower())
     return safe.strip("-") or "unnamed-skill"
 
@@ -90,9 +106,10 @@ def _normalize_frontmatter(
     requires_data: list[str] | None,
     source_kind: str,
 ) -> tuple[dict, list[str]]:
-    """Map foreign frontmatter to ci-agent's schema.
+    """将外部 SKILL.md 的 frontmatter 映射到 ci-agent 的 schema，返回 (规范化 meta, 警告列表)。
 
-    Returns (normalized_meta, warnings).
+    Map foreign frontmatter to ci-agent's schema. Returns (normalized_meta, warnings).
+    dimension 是 ci-agent 必需但外部格式通常没有的字段，必须由调用方通过参数或源文件提供。
     """
     warnings: list[str] = []
     out: dict = {}
@@ -159,10 +176,14 @@ def import_from_path(
     source_kind: str = "path",
     name_override: str | None = None,
 ) -> ImportResult:
-    """Import a skill from a local directory containing SKILL.md.
+    """从本地目录导入技能，是所有导入函数的核心实现，其他入口函数最终都调用此函数。
 
+    Import a skill from a local directory containing SKILL.md.
     The directory must have a SKILL.md at its root. After normalization
     the result is written to ~/.ci-agent/skills/<name>/.
+
+    companion 文件（README、hooks.py 等）会原样复制，不做格式转换。
+    写入后通过 SkillRegistry 做一次完整的解析校验，失败则回滚删除目标目录。
     """
     source_dir = Path(source_dir).expanduser().resolve()
     if not source_dir.is_dir():
@@ -262,12 +283,15 @@ def install_from_github(
     requires_data: list[str] | None = None,
     target_dir: Path | None = None,
 ) -> ImportResult:
-    """Clone a GitHub repo containing a skill and import it.
+    """从 GitHub 仓库 clone 并导入技能，clone 到临时目录后复用 import_from_path 逻辑。
 
+    Clone a GitHub repo containing a skill and import it.
     Accepted formats:
       - https://github.com/owner/repo
       - git@github.com:owner/repo.git
       - gh:owner/repo  (shorthand)
+
+    使用 --depth=1 浅克隆降低带宽消耗；导入完成后临时目录由 TemporaryDirectory 自动清理。
     """
     if url.startswith("gh:"):
         url = f"https://github.com/{url[3:]}"

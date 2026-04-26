@@ -1,4 +1,10 @@
 """FastAPI application setup."""
+# ── 架构角色 ──────────────────────────────────────────────────────────────────
+# 本文件是整个 API 层的入口，负责创建 FastAPI app 实例并完成三项初始化工作：
+#   1. 配置 ci_optimizer 命名空间的日志（确保后台任务输出在 uvicorn 控制台可见）
+#   2. 通过 lifespan 钩子在启动时初始化数据库并预热 skill 注册表
+#   3. 注册所有子路由（REST 分析、诊断、流式聊天、webhook）并配置 CORS
+# 上游：uvicorn 入口；下游：routes / chat / diagnose / webhooks 四个路由模块。
 
 import logging
 import os
@@ -36,6 +42,7 @@ _ci_logger.propagate = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """应用生命周期钩子：启动时完成数据库初始化和 skill 注册表预热，避免首次请求承担冷启动延迟。"""
     await init_db()
     # Preload the skill registry singleton so the first request doesn't pay the scan cost.
     from ci_optimizer.agents.skill_registry import get_registry
@@ -74,5 +81,7 @@ app.include_router(chat_router)
 
 @app.get("/health", tags=["health"])
 async def health():
-    """Liveness / readiness probe endpoint."""
+    """Liveness / readiness probe endpoint.
+    用于 k8s 健康检查或负载均衡器探活，无需鉴权。
+    """
     return {"status": "ok"}

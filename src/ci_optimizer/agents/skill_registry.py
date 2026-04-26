@@ -1,4 +1,13 @@
-"""Skill registry — discovers, parses, validates, and manages SKILL.md definitions."""
+"""Skill registry — discovers, parses, validates, and manages SKILL.md definitions.
+
+架构角色：技能（子 agent）的配置管理层，将磁盘上的 SKILL.md 文件转化为运行时可用的 Skill 对象。
+核心职责：
+  1. 扫描 builtin（项目内 skills/）和 user（~/.ci-agent/skills/）两个目录，同名技能以用户定义优先
+  2. 解析 SKILL.md 的 YAML frontmatter + 正文，并对字段进行校验
+  3. 动态生成 orchestrator 的 system prompt，使其知道要调度哪些 specialist
+与其他模块的关系：orchestrator.py、anthropic_engine.py、openai_engine.py 均通过 get_registry()
+  获取全局单例来查询激活的技能列表；failure_triage.py 通过 get_skill("failure-triage") 获取独立技能。
+"""
 
 import logging
 from dataclasses import dataclass, field
@@ -19,7 +28,12 @@ _USER_DIR = Path.home() / ".ci-agent" / "skills"
 
 @dataclass
 class Skill:
-    """A single analysis skill parsed from SKILL.md."""
+    """从 SKILL.md 解析得到的单个分析技能，代表一个 specialist subagent 的完整定义。
+
+    dimension 对应分析维度（如 "security"、"performance"），是 orchestrator 组织结果的分类键。
+    requires_data 决定 prefetch 阶段需要预先加载哪些数据（工作流文件、运行日志等）。
+    standalone=True 的技能（如 failure-triage）不参与多专家编排流程，由专属 API 直接调用。
+    """
 
     name: str
     description: str
@@ -36,7 +50,10 @@ class Skill:
     standalone: bool = False
 
     def to_agent_definition(self, model: str | None = None):
-        """Convert to Claude Agent SDK AgentDefinition."""
+        """将 Skill 转换为 Claude Agent SDK 所需的 AgentDefinition 格式。
+
+        仅在 Anthropic 引擎路径下使用；OpenAI 引擎直接使用 skill.prompt 字符串。
+        """
         from claude_agent_sdk import AgentDefinition
 
         kwargs = dict(
@@ -50,7 +67,11 @@ class Skill:
 
 
 class SkillRegistry:
-    """Discovers and manages skills from builtin and user directories."""
+    """从 builtin 和 user 两个目录发现并管理所有技能定义。
+
+    采用"用户目录覆盖内置目录"的策略，允许用户在不修改项目代码的情况下覆盖或扩展技能。
+    通常通过模块级单例 get_registry() 访问，避免每次请求重复扫描文件系统。
+    """
 
     def __init__(
         self,
@@ -62,7 +83,10 @@ class SkillRegistry:
         self._skills: dict[str, Skill] = {}
 
     def load(self) -> "SkillRegistry":
-        """Scan builtin + user directories. User skills override builtin by name."""
+        """扫描 builtin 和 user 目录并填充技能字典，支持链式调用。
+
+        User skills override builtin by name.
+        """
         self._skills.clear()
         self._load_dir(self._builtin_dir, source="builtin")
         self._load_dir(self._user_dir, source="user")
@@ -91,7 +115,12 @@ class SkillRegistry:
 
     @staticmethod
     def _parse_skill_md(path: Path, source: str) -> Skill:
-        """Parse SKILL.md: YAML frontmatter + body."""
+        """解析单个 SKILL.md 文件：提取 YAML frontmatter 和正文 prompt。
+
+        若 prompt 中不含 "## Output Format"，则自动追加标准 JSON 输出格式说明，
+        确保所有 specialist 的输出格式一致，便于 orchestrator 聚合。
+        Parse SKILL.md: YAML frontmatter + body.
+        """
         text = path.read_text(encoding="utf-8")
         parts = text.split("---", 2)
         if len(parts) < 3:
@@ -135,11 +164,14 @@ class SkillRegistry:
         return errors
 
     def get_active_skills(self, selected: list[str] | None = None) -> list[Skill]:
-        """Return enabled skills for the multi-specialist orchestrator.
+        """返回用于多专家编排流程的激活技能列表，按 priority 降序排列。
 
         Standalone skills (e.g., failure-triage) are excluded because they
         have a different input contract and are invoked directly by their
         own API endpoint. Use ``get_skill(name)`` to access them.
+
+        selected 为 None 时返回全部非 standalone 技能；否则按 dimension 名过滤，
+        允许用户在 API 请求中指定只运行哪些分析维度。
         """
         skills = [s for s in self._skills.values() if s.enabled and not s.standalone]
         if selected:
@@ -165,7 +197,12 @@ class SkillRegistry:
         return self
 
     def build_orchestrator_prompt(self, skills: list[Skill]) -> str:
-        """Dynamically generate orchestrator prompt from active skills."""
+        """根据当前激活的技能列表动态生成 orchestrator 的 system prompt。
+
+        将 dimension 名称、各 specialist 描述、以及期望的 JSON 输出 schema 内嵌进 prompt，
+        使 orchestrator 知道要调用哪些 specialist 以及最终输出的结构。
+        Dynamically generate orchestrator prompt from active skills.
+        """
         dim_list = "\n".join(f"{i + 1}. **{s.dimension}**: {s.description}" for i, s in enumerate(skills))
         agent_list = "\n".join(f"   - **{s.name}**: {s.description}" for s in skills)
         dim_schema = "\n".join(f'    "{s.dimension}": {{ "findings": [...] }},' for s in skills)
@@ -211,7 +248,9 @@ _global_registry: SkillRegistry | None = None
 
 
 def get_registry() -> SkillRegistry:
-    """Return a lazily-initialized, process-wide SkillRegistry singleton.
+    """返回进程级 SkillRegistry 单例（懒初始化）。
+
+    Return a lazily-initialized, process-wide SkillRegistry singleton.
 
     Use this from long-lived code paths (API routes, engines) so we don't
     re-scan the filesystem on every request. Call ``get_registry().reload()``
@@ -219,6 +258,8 @@ def get_registry() -> SkillRegistry:
 
     Tests and CLI one-shots that want isolation can still construct a
     ``SkillRegistry(...)`` directly.
+
+    设计权衡：单例模式避免每次 API 请求重扫文件系统，但热更新时需要手动调用 reload()。
     """
     global _global_registry
     if _global_registry is None:

@@ -1,5 +1,13 @@
 """Single-run CI failure diagnosis runner.
 
+架构角色：独立的 standalone skill 执行器，专门处理 /api/ci-runs/diagnose 端点的单次故障诊断请求。
+核心职责：
+  1. 从 SkillRegistry 加载 "failure-triage" skill 的 prompt
+  2. 对单条错误日志片段发起一次性 LLM 调用（无工具调用、无并行、无综合步骤）
+  3. 解析并严格校验返回的 JSON（category、confidence 枚举值），提供优雅降级而非抛出异常
+与其他模块的关系：不经过 orchestrator 调度，直接被 API 路由层调用；
+  通过 provider routing（model 名称前缀判断）支持 Anthropic 和 OpenAI 两套 SDK。
+
 Invokes the ``failure-triage`` skill on a single error excerpt and parses
 the resulting strict JSON. Unlike the multi-specialist orchestrator, this
 is a **one-shot** LLM call — no tool use, no parallelism, no synthesis.
@@ -39,10 +47,17 @@ _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class FailureTriageError(Exception):
-    """Raised when the skill is unavailable or the LLM call fails irrecoverably."""
+    """技能不可用或 LLM 调用无法恢复时抛出，区别于可降级的格式解析错误。
+
+    Raised when the skill is unavailable or the LLM call fails irrecoverably.
+    """
 
 
 def _load_prompt() -> str:
+    """从注册表获取 failure-triage skill 的 prompt，若首次未找到则强制 reload 后重试。
+
+    reload 重试是为了应对注册表在 skill 文件写入之前已经初始化的竞态场景。
+    """
     skill = get_registry().get_skill("failure-triage")
     if skill is None:
         # Try a reload in case the registry was loaded before the skill was created.
@@ -58,10 +73,13 @@ def _build_user_message(*, workflow: str, failing_step: str | None, excerpt: str
 
 
 def _parse_diagnosis(raw: str, failing_step: str | None) -> dict[str, Any]:
-    """Extract the JSON object, validate enums, return a clean dict.
+    """从 LLM 原始响应中提取 JSON，校验枚举字段，返回规范化的诊断结果。
 
+    Extract the JSON object, validate enums, return a clean dict.
     Falls back to category=unknown / confidence=low on malformed output so
     callers always get a usable response.
+
+    root_cause 截断至 300 字符、quick_fix 截断至 500 字符，防止异常长输出污染 API 响应。
     """
     match = _JSON_OBJECT_RE.search(raw.strip())
     if not match:
@@ -115,7 +133,11 @@ async def _call_anthropic(
     model: str,
     config: AgentConfig,
 ) -> tuple[str, float | None]:
-    """Single Anthropic Messages API call. Returns (raw_text, cost_usd)."""
+    """向 Anthropic Messages API 发起单次调用，返回 (原始文本, 估算费用)。
+
+    Single Anthropic Messages API call. Returns (raw_text, cost_usd).
+    使用低 temperature（0.1）以获得稳定、可重复的诊断结果。
+    """
     try:
         from anthropic import AsyncAnthropic
     except ImportError as e:
@@ -133,6 +155,8 @@ async def _call_anthropic(
         parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
         text = "".join(parts)
         # Anthropic SDK exposes usage but not cost; caller may compute via Langfuse.
+        # Anthropic SDK exposes usage but not cost; caller may compute via Langfuse.
+        # 此处基于内置价格表做本地估算，Langfuse 可提供更精确的追踪数据
         cost = _estimate_anthropic_cost(model, resp.usage.input_tokens, resp.usage.output_tokens)
         return text, cost
     finally:
@@ -170,6 +194,7 @@ async def _call_openai(
         await client.close()
 
 
+# 粗略费用估算表（美元/百万 token），未知模型返回 None 而非猜测。
 # Rough cost table (USD per 1M tokens). Undercounts on unknown models by returning None.
 _ANTHROPIC_PRICES = {
     # (input, output) per 1M tokens
@@ -208,7 +233,9 @@ async def diagnose(
     model: str,
     config: AgentConfig,
 ) -> dict[str, Any]:
-    """Run the failure-triage skill on a single error excerpt.
+    """对单条 CI 错误日志片段执行故障诊断，是本模块对外暴露的唯一公共接口。
+
+    Run the failure-triage skill on a single error excerpt.
 
     Returns a dict with keys:
         category, confidence, root_cause, quick_fix, failing_step,
@@ -217,6 +244,8 @@ async def diagnose(
     The ``category`` and ``confidence`` fields are always validated against
     their enums; malformed LLM output degrades to ``unknown`` / ``low`` rather
     than raising.
+
+    通过 model 名称前缀（"claude" 开头）选择 provider，避免暴露额外配置项。
     """
     if not excerpt.strip():
         raise FailureTriageError("empty excerpt — nothing to diagnose")

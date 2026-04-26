@@ -1,4 +1,9 @@
 """Slash command parser and handlers."""
+# 架构角色：斜杠命令的统一解析与分发层，与业务逻辑完全解耦。
+# 核心职责：识别 / 开头的用户输入，路由到对应处理函数，返回 CommandResult 告知调用方后续动作。
+# 与其他模块的关系：
+#   - app.py 在 REPL 循环中调用 is_command() + execute()，根据 CommandResult.quit 决定是否退出
+#   - renderer.py 的 StreamRenderer 作为参数传入，用于 /cost 命令展示统计
 
 from __future__ import annotations
 
@@ -14,7 +19,9 @@ if TYPE_CHECKING:
 
 @dataclass
 class CommandResult:
-    """Result of executing a slash command."""
+    """斜杠命令执行结果，供 app.py 的 REPL 循环读取后续动作标志。
+    quit=True 时 REPL 立即退出；clear_history=True 时 app.py 可选择清理 UI 状态。
+    """
 
     handled: bool = True
     clear_history: bool = False
@@ -34,7 +41,9 @@ def execute(
     conversation: list,
     model: str,
 ) -> CommandResult:
-    """Parse and execute a slash command. Returns a CommandResult."""
+    """解析并执行斜杠命令，返回 CommandResult。
+    app.py 已保证只在 is_command() 为 True 时调用此函数，无需重复校验。
+    """
     parts = text.strip().split(maxsplit=1)
     cmd = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
@@ -95,6 +104,7 @@ def _cmd_model(console: Console, arg: str, current: str) -> CommandResult:
     else:
         console.print(f"模型已切换为: [bold]{arg}[/bold]")
         # The caller is responsible for actually updating the model in config.
+        # 注：实际写入 config.model 的逻辑在 app.py 的 REPL 中，此处只打印提示。
     return CommandResult()
 
 
@@ -136,7 +146,9 @@ def _cmd_repo(console: Console, arg: str) -> CommandResult:
 
 
 def _cmd_compact(console: Console, conversation: list) -> CommandResult:
-    """Keep only the most recent 6 messages to free context window."""
+    """保留最近 KEEP 条消息，丢弃更早的历史，释放上下文窗口占用。
+    直接对 conversation 列表原地截断，避免创建新列表引用失效。
+    """
     KEEP = 6
     total = len(conversation)
     if total <= KEEP:

@@ -1,4 +1,13 @@
-"""Anthropic engine — runs analysis via Claude Agent SDK."""
+"""Anthropic engine — runs analysis via Claude Agent SDK.
+
+架构角色：Anthropic 路径的执行引擎，通过 Claude Agent SDK 并行调度多个 specialist subagent。
+核心职责：
+  1. 将每个 Skill 转换为 AgentDefinition，注册为 orchestrator 可调用的子 agent
+  2. 构建包含数据路径的 user prompt，交给 orchestrator 驱动所有 specialist 并行分析
+  3. 流式收集 orchestrator 的最终输出，解析为 AnalysisResult 并统计费用
+与其他模块的关系：由 orchestrator.run_analysis() 在 provider="anthropic" 时调用；
+  反向导入 orchestrator._parse_result 和 AnalysisResult 来处理和封装结果。
+"""
 
 import json
 import logging
@@ -27,7 +36,12 @@ if TYPE_CHECKING:
 
 
 def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
-    """Build the prompt for the orchestrator with context paths."""
+    """构建发给 orchestrator 的 user prompt，将本次分析所有相关数据的文件路径内嵌其中。
+
+    Anthropic 引擎的 specialist 通过文件系统工具（Read/Glob/Grep）直接读取数据，
+    因此只需在 prompt 中提供路径而非数据内容，与 OpenAI 引擎的"内联数据"策略不同。
+    Build the prompt for the orchestrator with context paths.
+    """
     parts = [
         f"Analyze the CI pipelines in: {ctx.local_path}",
         f"\nWorkflow files ({len(ctx.workflow_files)} found):",
@@ -64,14 +78,21 @@ def _build_analysis_prompt(ctx: AnalysisContext, language: str = "en") -> str:
 
 @langfuse_observe(name="anthropic-analysis")
 async def run_analysis_anthropic(ctx: AnalysisContext, config: AgentConfig, skills: "list[Skill]") -> "AnalysisResult":
-    """Run analysis using Claude Agent SDK with dynamically loaded skills."""
+    """使用 Claude Agent SDK 执行并行多专家分析，由 orchestrator subagent 统一调度。
+
+    Run analysis using Claude Agent SDK with dynamically loaded skills.
+
+    SDK 的 "Agent" tool 允许 orchestrator 在同一次对话中并行调用所有 specialist；
+    这里只设置 allowed_tools=["Agent"]，禁止 orchestrator 直接使用文件工具，
+    强制其通过 specialist 来完成所有实际分析工作。
+    """
     from ci_optimizer.agents.orchestrator import AnalysisResult
     from ci_optimizer.agents.skill_registry import SkillRegistry
 
-    # Build agents from skills
+    # 将每个 Skill 转为 AgentDefinition，以技能名为 key 注册进 SDK 的 agents 字典
     agents = {s.name: s.to_agent_definition(config.model) for s in skills}
 
-    # Build orchestrator prompt dynamically
+    # 每次动态生成 orchestrator prompt，使其精确反映本次激活的技能集合
     registry = SkillRegistry()
     orchestrator_prompt = registry.build_orchestrator_prompt(skills)
 

@@ -1,4 +1,12 @@
 """GitHub webhook handler for automated CI analysis."""
+# ── 架构角色 ──────────────────────────────────────────────────────────────────
+# 本文件处理来自 GitHub 的 webhook 事件，是 CI Agent 的被动触发入口。
+# 主要职责：
+#   - 验证 X-Hub-Signature-256 HMAC 签名（WEBHOOK_SECRET 配置后强制校验）
+#   - 处理 workflow_run completed 事件：创建 DB 记录并在后台启动全量分析
+#   - 对失败的 workflow_run，按"开关 + 采样率 + 每日预算"三道门控决定是否触发自动诊断
+#   - 支持简单 {"repo": "owner/name"} 格式的手动 curl 触发
+# 所有耗时操作（分析、诊断）均推入 BackgroundTasks，接口本身立即返回 202。
 
 import hashlib
 import hmac
@@ -50,6 +58,8 @@ async def _run_auto_diagnosis_task(
     Runs in its own session so we don't tie up the webhook request's session
     past the 202 response. Swallows errors so a failing diagnosis never
     poisons the surrounding analysis pipeline.
+    使用独立的 async_session，防止 webhook 请求 session 在 202 返回后被复用；
+    吞掉所有异常（仅 warning 日志），确保自动诊断失败不影响主分析流水线。
     """
     # Late import to break a circular dependency with diagnose.py.
     from ci_optimizer.api.diagnose import run_diagnosis
@@ -82,6 +92,8 @@ async def _should_auto_diagnose(db: AsyncSession, config: AgentConfig) -> tuple[
     """Decide whether to enqueue an auto-diagnosis for a failed webhook run.
 
     Returns (should_run, reason). Reason is useful for logging/debugging.
+    三道门控（按顺序）：全局开关 → 随机采样率 → 今日累计费用预算。
+    reason 字符串用于响应体和日志，方便调试配置是否生效。
     """
     if not config.diagnose_auto_on_webhook:
         return False, "disabled"
@@ -97,6 +109,7 @@ def _verify_signature(payload: bytes, signature_header: str | None, secret: str)
     """Validate X-Hub-Signature-256 HMAC.
 
     Raises HTTPException 401 if the signature is missing or invalid.
+    使用 hmac.compare_digest 进行常数时间比较，防止时序攻击。
     """
     if not signature_header:
         raise HTTPException(status_code=401, detail="Missing X-Hub-Signature-256 header")
@@ -144,6 +157,8 @@ async def github_webhook(
 
     # Track per-event auto-diagnosis intent so we can attach the task AFTER
     # the db.commit() below (BackgroundTasks only run after response send).
+    # 先收集自动诊断的目标信息，等 db.commit() 完成后再添加 background task，
+    # 保证 session 已关闭、DB 数据已持久化时后台任务才开始执行。
     auto_diag_target: dict | None = None
 
     # ── GitHub workflow_run event ──

@@ -1,4 +1,16 @@
 """TUI entry point: startup banner, repo confirm, REPL loop."""
+# 架构角色：TUI 层的总入口，负责将所有子模块串联成完整的交互式终端体验。
+# 核心职责：
+#   1. 启动 banner → setup wizard / config review → 仓库确认 → 自动拉起后端 Server
+#   2. 驱动主 REPL 循环：读取用户输入 → 分发斜杠命令或调用 /api/chat SSE 流
+#   3. 消费 SSE 事件（text / tool_use / tool_result / write_proposal / done / error）
+#   4. SSE 流结束后，若有 write_proposal 则转给 panels.confirm_action 走确认流程
+# 与其他模块的关系：
+#   - commands.py  负责斜杠命令的解析与执行
+#   - renderer.py  负责统计 token/花费，并提供 console 引用
+#   - panels.py    负责写入确认面板 UI
+#   - context.py   负责检测并确认 Git 仓库
+#   - setup.py     负责首次配置向导和每次启动时的配置复核
 
 from __future__ import annotations
 
@@ -35,7 +47,9 @@ _COST_TABLE = {
 
 
 def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Rough USD cost estimate based on model name prefix."""
+    """基于模型名称前缀粗略估算本次请求的 USD 花费。
+    用模型名子串匹配而非精确匹配，兼容带版本号的完整模型 ID（如 claude-sonnet-4-5）。
+    """
     model_lower = model.lower()
     for key, (in_price, out_price) in _COST_TABLE.items():
         if key in model_lower:
@@ -64,7 +78,7 @@ def _print_connected(console: Console, ctx: RepoContext, config: AgentConfig, se
 
 
 async def _check_server(server_url: str) -> bool:
-    """Check if the CI Agent server is reachable."""
+    """探测后端 Server 是否已在运行（GET /health），超时 3s 视为不可达。"""
     try:
         async with httpx.AsyncClient(timeout=3) as client:
             resp = await client.get(f"{server_url}/health")
@@ -74,7 +88,7 @@ async def _check_server(server_url: str) -> bool:
 
 
 def _start_server_background(port: int = 8000) -> subprocess.Popen:
-    """Start the CI Agent server as a background process."""
+    """在子进程中启动 uvicorn，stdout/stderr 静默丢弃，避免污染 TUI 终端。"""
     import sys
 
     proc = subprocess.Popen(
@@ -86,7 +100,9 @@ def _start_server_background(port: int = 8000) -> subprocess.Popen:
 
 
 async def _ensure_server(server_url: str, console: Console) -> subprocess.Popen | None:
-    """Ensure the server is running. Start it automatically if not."""
+    """确保后端 Server 就绪。若未运行则自动拉起，最多等待 10s（轮询 0.5s/次）。
+    返回子进程句柄（由调用方在退出时 terminate），Server 已在运行则返回 None。
+    """
     from rich.live import Live
     from rich.text import Text
 
@@ -141,7 +157,9 @@ async def _handle_write_proposals(
     renderer: "StreamRenderer",
     server_url: str,
 ) -> None:
-    """Route write proposals through panels.confirm_action for unified UX."""
+    """将 SSE write_proposal 事件中的变更列表路由至确认面板，并在用户确认后调用 /api/chat/apply 落盘。
+    用户可选 YES（文件+commit）、EDIT_ONLY（只写文件跳过 git）、NO（取消）。
+    """
     console = renderer.console
 
     file_proposals = [p for p in proposals if p.get("action") in ("write_file", "edit_file")]
@@ -194,7 +212,15 @@ async def _query_via_server(
     conversation: list[dict],
     server_url: str,
 ) -> None:
-    """Send user input to the server's /api/chat SSE endpoint and stream output."""
+    """将用户消息 POST 到 /api/chat，逐行消费 SSE 事件流并实时渲染到终端。
+    事件类型处理逻辑：
+      text         → 累积文本块，用 · 进度点提示流式输出进行中
+      tool_use     → 打印"正在执行工具"状态行
+      tool_result  → 打印工具执行结果摘要
+      write_proposal → 暂存变更提案，等待 done 事件后统一弹确认面板
+      done         → 渲染完整 AI 回复（Markdown）+ token/花费统计
+      error        → 抛出异常，由 REPL 捕获并显示红色错误提示
+    """
     conversation.append({"role": "user", "content": user_input})
 
     payload = {
@@ -296,7 +322,14 @@ async def _query_via_server(
 
 
 async def run_tui(repo_path: Path | None = None) -> None:
-    """Main TUI entry point: banner → repo confirm → REPL loop."""
+    """TUI 主入口，完整生命周期：
+    1. 打印 banner
+    2. 首次运行 → setup wizard；否则 → config review（可跳过逐项修改）
+    3. 检测并确认 Git 仓库（支持手动切换路径）
+    4. 确保后端 Server 就绪（自动拉起或复用已有进程）
+    5. 进入 REPL：读输入 → 分发斜杠命令 / 发送 /api/chat → 渲染响应
+    6. 退出时清理自动拉起的 Server 子进程
+    """
     console = Console()
     renderer = StreamRenderer(console=console)
 

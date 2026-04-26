@@ -1,4 +1,12 @@
 """Repository detection and user confirmation for TUI startup."""
+# 架构角色：TUI 启动流程中的仓库感知层，在进入 REPL 前完成仓库上下文的建立。
+# 核心职责：
+#   1. 通过 git 命令探测当前目录所在的 Git 工作树根、分支、最近提交
+#   2. 调用 resolver 模块解析 GitHub remote，得到 owner/repo
+#   3. 用 confirm_repo() 交互式地让用户确认或手动切换仓库路径
+# 与其他模块的关系：
+#   - app.py 在 setup 之后调用 detect_repo() + confirm_repo() 得到 RepoContext
+#   - RepoContext 在整个 REPL 生命周期内作为仓库元数据随每次 /api/chat 请求一起发送
 
 import subprocess
 from dataclasses import dataclass
@@ -9,7 +17,9 @@ from ci_optimizer.resolver import detect_github_remote
 
 @dataclass
 class RepoContext:
-    """Detected repository information."""
+    """已检测到的 Git 仓库上下文，贯穿整个 TUI 会话生命周期。
+    display_name 属性在 owner/repo 已知时返回 GitHub 格式，否则降级为目录名。
+    """
 
     local_path: Path
     owner: str | None = None
@@ -25,7 +35,9 @@ class RepoContext:
 
 
 def _git_output(cwd: Path, *args: str) -> str | None:
-    """Run a git command and return stripped stdout, or None on failure."""
+    """在指定目录执行 git 子命令，返回去除首尾空白的 stdout；超时或命令失败则返回 None。
+    timeout=5 防止在挂载网络盘等慢路径上卡住 TUI 启动。
+    """
     try:
         result = subprocess.run(
             ["git", *args],
@@ -42,9 +54,8 @@ def _git_output(cwd: Path, *args: str) -> str | None:
 
 
 def detect_repo(path: Path | None = None) -> RepoContext | None:
-    """Detect a git repository at *path* (defaults to cwd).
-
-    Returns a RepoContext if the path is inside a git worktree, else None.
+    """在 path（默认 cwd）处探测 Git 仓库，构建并返回 RepoContext。
+    若路径不在任何 Git 工作树中，返回 None（由调用方决定如何提示用户）。
     """
     path = (path or Path.cwd()).resolve()
 
@@ -71,10 +82,9 @@ def detect_repo(path: Path | None = None) -> RepoContext | None:
 
 
 async def confirm_repo(ctx: RepoContext | None) -> RepoContext:
-    """Interactive prompt to confirm or switch the working repository.
-
-    Uses prompt_toolkit's async API to avoid nested event loop issues.
-    Returns the confirmed RepoContext.
+    """交互式确认或切换工作仓库，返回最终生效的 RepoContext。
+    使用 prompt_toolkit 的 async API，与 asyncio 事件循环兼容，避免嵌套循环问题。
+    用户输入 'q' 或 EOFError 时抛出 EOFError，由 app.py 捕获后优雅退出。
     """
     from prompt_toolkit import PromptSession
     from rich.console import Console

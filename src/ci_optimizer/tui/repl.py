@@ -1,4 +1,11 @@
 """prompt_toolkit REPL session with history and key bindings."""
+# 架构角色：输入层配置模块，封装 prompt_toolkit 的 PromptSession 构建细节。
+# 核心职责：
+#   1. 配置持久化历史文件（~/.ci-agent/history），让用户可用上下箭头翻历史
+#   2. 注册斜杠命令的自动补全（WordCompleter）
+#   3. 绑定 Ctrl+C（清空输入）、Ctrl+D（退出）、Alt+Enter（多行换行）
+# 与其他模块的关系：
+#   - app.py 调用 build_session() 获取 PromptSession，在 REPL 循环中通过 prompt_async() 读取用户输入
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
@@ -13,7 +20,10 @@ SLASH_COMMANDS = ["/help", "/repo", "/skills", "/clear", "/cost", "/compact", "/
 
 
 def build_session() -> PromptSession:
-    """Create a configured PromptSession with history, completion, and key bindings."""
+    """构建并返回配置好的 PromptSession。
+    CONFIG_DIR 在此处按需创建（parents=True），保证历史文件路径有效。
+    multiline=False 保持单行提交语义；多行输入通过 Alt+Enter 注入换行符实现。
+    """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
     completer = WordCompleter(SLASH_COMMANDS, sentence=True)

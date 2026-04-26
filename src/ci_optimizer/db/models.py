@@ -1,4 +1,11 @@
-"""SQLAlchemy ORM models for CI Agent."""
+"""SQLAlchemy ORM models for CI Agent.
+
+架构角色：数据层的基础，定义所有持久化实体的结构。
+核心职责：声明 ORM 表结构（Repository、AnalysisReport、Finding、FailureDiagnosis），
+并通过 relationship() 描述表间关联。
+与其他模块的关系：被 database.py 用于建表，被 crud.py 用于查询/写入，
+上层 API 路由和 AI 技能均通过 crud 间接依赖本模块。
+"""
 
 from datetime import datetime, timezone
 
@@ -12,6 +19,8 @@ class Base(DeclarativeBase):
 
 
 class Repository(Base):
+    """代表一个被追踪的 GitHub 仓库，是所有报告和诊断的根节点。"""
+
     __tablename__ = "repositories"
     __table_args__ = (sqlalchemy.UniqueConstraint("owner", "repo", name="uq_owner_repo"),)
 
@@ -25,6 +34,11 @@ class Repository(Base):
 
 
 class AnalysisReport(Base):
+    """一次 CI 分析任务的执行记录，包含输入过滤条件、执行状态和输出结果。
+
+    filters_hash 用于缓存命中判断：相同过滤条件的近期报告可直接复用，避免重复调用 LLM。
+    """
+
     __tablename__ = "analysis_reports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -43,6 +57,8 @@ class AnalysisReport(Base):
 
 
 class Finding(Base):
+    """分析报告中的单条问题发现，细化到具体维度（效率/安全/成本/错误）和严重程度。"""
+
     __tablename__ = "findings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -68,6 +84,11 @@ class FailureDiagnosis(Base):
     Natural key: (repo_id, run_id, run_attempt, tier). Uses repo_id FK but
     intentionally does NOT reference ci_runs yet — that table lands with
     issue #36 and this model must work standalone in v1.
+
+    针对单次失败 CI Run 的 AI 诊断结果。
+    tier 区分诊断深度（"default" 快速 / "deep" 深度），同一 run 在不同 tier 下可各存一条。
+    error_signature 是去噪后的错误哈希，用于跨 run 聚类相同根因，避免重复调用 LLM。
+    故意不外键关联 ci_runs 表（该表尚未落地），保证本模型可独立运行。
     """
 
     __tablename__ = "failure_diagnoses"
